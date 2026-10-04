@@ -945,7 +945,7 @@ async function measure(ctx, here, name, undo) {
   const config = {
     renderer: webgpu ? "webgpu" : "webgl2",
     quality,
-    light: !extreme.game.settings?.detail || !!extreme.game.touchMode,
+    light: !extreme.game.settings?.detail || !!(extreme.game.controls?.handheld ?? extreme.game.touchMode),
     dt: +dt.toFixed(4),
     repeats,
     frames,

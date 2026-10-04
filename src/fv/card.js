@@ -25,13 +25,14 @@ const CSS = `
 /* The offer to open a room belongs to the start and sits close under it; the room in the
    pause stands a little further off. */
 #intro:not(.fv-in-room) .extension { margin-top: 12px; }
-.touch #intro:not(.fv-in-room) .extension { margin-top: 8px; }
-.touch #intro.fv-in-room.paused .extension { margin-top: 12px; }
+/* (On a phone or a tablet, #habitat.handheld, the base card sits closer: the offer too.) */
+.handheld #intro:not(.fv-in-room) .extension { margin-top: 8px; }
+.handheld #intro.fv-in-room.paused .extension { margin-top: 12px; }
 /* Sideways on a phone the base card is drawn tighter so that it fits the screen; the offer
    follows, a little closer under the start and a little lower (coop.js), or it alone would
    make the card scroll. */
 @media (max-height: 500px) {
-  .touch #intro:not(.fv-in-room) .extension { margin-top: 6px; }
+  .handheld #intro:not(.fv-in-room) .extension { margin-top: 6px; }
 }
 `;
 
