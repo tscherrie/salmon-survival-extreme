@@ -9,4 +9,5 @@
 // The controls in use, the mouse and the keyboard or touch, can change hands mid-game (a
 // computer with a touch screen): game.controls (src/controls.js) has `touch` for the ones in
 // use now and `on(fn)` for each change; game.touchMode is `touch` at the moment it is read.
+// Whether the game runs on a phone or a tablet (for lighter defaults) is `controls.handheld`.
 export const mods = [];

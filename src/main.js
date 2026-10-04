@@ -814,8 +814,10 @@ async function start() {
     });
   let touch = handheld || controls.touch ? makeTouch() : null;
   // The controls changing hands mid-game (src/controls.js): to touch, the touch controls come
-  // up and the pointer is let go; to the mouse, they go, and a click that fell on them is a
-  // click on the river under them. The line with the controls, while still up, follows.
+  // up and the pointer is let go; to the mouse, they go, and a click that fell on them (the
+  // cursor resting where they came up) does what it showed: their pause button pauses, and
+  // anywhere else on them it is a click on the river under them. The line with the controls,
+  // while still up, follows.
   controls.on((scheme, event) => {
     if (scheme === "touch") {
       touch ??= makeTouch();
@@ -827,7 +829,9 @@ async function start() {
     } else if (touch) {
       touch.release();
       touch.hide();
-      if (event?.type === "pointerdown" && event.target?.closest?.("#touch .look")) pressRiver(event);
+      const on = event?.type === "pointerdown" ? event.target?.closest?.("#touch") : null;
+      if (on && event.target.closest(".pause")) setPaused(true);
+      else if (on) pressRiver(event);
     }
     hud.controls(scheme === "touch");
   });

@@ -43,9 +43,12 @@ export function handheldDevice() {
 }
 export const isDesktop = () => !handheldDevice();
 
-// What a mouse has to travel, in pixels, before it takes the controls over from a finger:
-// a real move, not the pointer events a browser makes up for a cursor that stands still.
+// What a mouse has to travel, in pixels, in one sweep before it takes the controls over from
+// a finger: a real move, not the pointer events a browser makes up for a cursor that stands
+// still, nor the odd pixel a mouse lying on a shaky desk creeps by now and then (a rest longer
+// than MOUSE_SWEEP, in milliseconds, between two moves starts the count afresh).
 const MOUSE_TRAVEL = 12;
+const MOUSE_SWEEP = 250;
 // The game's keys: steering and swimming, the dash, and the keys of the HUD's buttons.
 const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyE", "KeyF", "KeyG", "KeyI", "KeyL", "KeyM", "KeyP", "KeyT"]);
 // A key pressed while a finger is on the screen, or just after, is someone playing with
@@ -58,6 +61,7 @@ const FINGER_GRACE = 1500;
 export function createControls({ habitat, handheld, scheme, pinned = false, river = () => true }) {
   const listeners = new Set();
   let travel = 0;
+  let movedAt = -Infinity;
   const fingers = new Set();
   let fingerAt = -Infinity;
   const controls = {
@@ -92,7 +96,11 @@ export function createControls({ habitat, handheld, scheme, pinned = false, rive
   window.addEventListener(
     "pointermove",
     (event) => {
-      if (event.pointerType !== "mouse" || controls.scheme === "mouse") return;
+      // (Not while a finger is on the screen either: a mouse moving then is a palm on the
+      // touch pad, not the mouse taken up; a click still hands the controls over.)
+      if (event.pointerType !== "mouse" || controls.scheme === "mouse" || fingers.size) return;
+      if (event.timeStamp - movedAt > MOUSE_SWEEP) travel = 0;
+      movedAt = event.timeStamp;
       travel += Math.abs(event.movementX || 0) + Math.abs(event.movementY || 0);
       if (travel >= MOUSE_TRAVEL) controls.use("mouse", event);
     },
@@ -119,7 +127,9 @@ export function createControls({ habitat, handheld, scheme, pinned = false, rive
   window.addEventListener(
     "keydown",
     (event) => {
-      if (controls.scheme === "mouse" || !GAME_KEYS.has(event.code) || event.ctrlKey || event.metaKey || event.altKey) return;
+      // (Only a key pressed afresh: one held down since a finger was on the screen repeats on
+      // its own, and the player has not let go of the touch controls for it.)
+      if (controls.scheme === "mouse" || event.repeat || !GAME_KEYS.has(event.code) || event.ctrlKey || event.metaKey || event.altKey) return;
       // (Not a name typed into a field.)
       if (event.target?.closest?.("input, textarea, select, [contenteditable]")) return;
       if (fingers.size || performance.now() - fingerAt < FINGER_GRACE) return;
