@@ -1,9 +1,12 @@
-// Playing on a phone or a tablet, held sideways. A finger dragged anywhere on the screen
-// looks round and steers (the mouse on a computer); two buttons for the right thumb: held
-// down, the arrow swims ahead (W), and the fish dashes, bites and leaps with the other
-// (Space) -- tapped, or with the thumb slid across onto it from the arrow, which keeps
+// Playing by touch: on a phone or a tablet held sideways, or on any screen that is touched
+// (src/controls.js decides when these controls are in use). A finger dragged anywhere on
+// the screen looks round and steers (the mouse on a computer); two buttons for the right
+// thumb: held down, the arrow swims ahead (W), and the fish dashes, bites and leaps with the
+// other (Space) -- tapped, or with the thumb slid across onto it from the arrow, which keeps
 // swimming. A quick sideways swipe just before it makes the dash a dodge. A pause button
-// in the corner (the map is switched on and off there, like the sound).
+// in the corner (the map is switched on and off there, like the sound). A pen works as a
+// finger does. The mouse is left alone (`fingersOnly`): picked up, it takes the controls
+// back (main.js) -- unless touch is held with ?touch, when it stands in for a finger.
 
 const ICONS = {
   go: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14.5 12 8.5l6 6" /></svg>',
@@ -13,7 +16,8 @@ const ICONS = {
   map: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5 9 4l6 2.5 5.5-2.5v13.5L15 20l-6-2.5-5.5 2.5Z" /><path d="M9 4v13.5M15 6.5V20" /></svg>',
 };
 
-export function createTouch({ habitat, onTouch, onLunge, onLungeEnd = () => {}, onLook, onPause }) {
+export function createTouch({ habitat, onTouch, onLunge, onLungeEnd = () => {}, onLook, onPause, fingersOnly = true }) {
+  const mouse = (event) => fingersOnly && event.pointerType === "mouse";
   const root = document.createElement("div");
   root.id = "touch";
   root.hidden = true;
@@ -39,14 +43,21 @@ export function createTouch({ habitat, onTouch, onLunge, onLungeEnd = () => {}, 
     lx = 0,
     ly = 0;
   const recent = [];
-  look.addEventListener("pointerdown", (event) => {
-    if (lookId !== null) return;
-    event.preventDefault();
-    onTouch();
+  // A finger that came down on the river under these controls before they were up (the touch
+  // that brought them) is taken over, and steers on without being lifted.
+  const take = (event) => {
     lookId = event.pointerId;
-    look.setPointerCapture(event.pointerId);
+    try {
+      look.setPointerCapture(event.pointerId);
+    } catch {}
     lx = event.clientX;
     ly = event.clientY;
+  };
+  look.addEventListener("pointerdown", (event) => {
+    if (lookId !== null || mouse(event)) return;
+    event.preventDefault();
+    onTouch();
+    take(event);
   });
   look.addEventListener("pointermove", (event) => {
     if (event.pointerId !== lookId) return;
@@ -88,6 +99,7 @@ export function createTouch({ habitat, onTouch, onLunge, onLungeEnd = () => {}, 
   };
   for (const button of [go, bite]) {
     button.addEventListener("pointerdown", (event) => {
+      if (mouse(event)) return;
       event.preventDefault();
       onTouch();
       button.setPointerCapture(event.pointerId);
@@ -133,6 +145,14 @@ export function createTouch({ habitat, onTouch, onLunge, onLungeEnd = () => {}, 
     state,
     show() {
       root.hidden = false;
+    },
+    // The mouse and the keyboard taken up instead: out of the way, until a finger comes back.
+    hide() {
+      root.hidden = true;
+    },
+    // A finger put down on the river (a pointerdown elsewhere): it steers from here on.
+    adopt(event) {
+      if (lookId === null && event?.pointerType !== "mouse") take(event);
     },
     // Paused or hidden: nothing held.
     release() {
