@@ -36,17 +36,25 @@ import { SKY, WEAPONS, createArsenal, createFiring, damageScale } from "./weapon
 import { tameTheWild } from "./wild.js";
 import { seeded } from "./wire.js";
 
-// How far (as a tangent) from the middle of the view an enemy draws a phone's auto-fire: a
-// wider cone than with a mouse.
+// How far (as a tangent) from the middle of the view an enemy draws the touch controls'
+// auto-fire: a wider cone than with a mouse.
 const TOUCH_ASSIST = Math.tan((9 * Math.PI) / 180);
 
 export function createCombat(game) {
-  const { scene, camera, canvas, habitat, salmon, fish, life, terrain, sound, settings, touchMode } = game;
+  const { scene, camera, canvas, habitat, salmon, fish, life, terrain, sound, settings } = game;
+  // Which controls are in use is asked each time it matters, never kept: on a computer with a
+  // touch screen they change hands mid-fight (src/controls.js), and the weapons follow -- the
+  // mouse buttons fire while the mouse and the keyboard are in use, the weapons fire by
+  // themselves while touch is. (game.touchMode reads the controls at the moment it is read.)
+  const touching = () => !!game.touchMode;
+  // A phone or a tablet (fixed for the page) gets the lighter effects, whichever controls are
+  // in use on it. (A base game from before the controls were apart had only touchMode.)
+  const handheld = game.controls ? !!game.controls.handheld : !!game.touchMode;
   const random = randomGenerator(0x51a7e);
   // (A stream of its own for what is only for the eye -- sparks, smoke, bubbles -- so the
   // looks never change what the game does next.)
   const look = randomGenerator(0x10c4);
-  const light = !settings?.detail || touchMode;
+  const light = !settings?.detail || handheld;
   const wild = tameTheWild(game);
   const enemies = createEnemies(scene, { random });
   const projectiles = createProjectiles({ capacity: light ? 150 : 300, scene, camera });
@@ -120,9 +128,11 @@ export function createCombat(game) {
       hud.say(WEAPONS[id].title, "", 1.2);
     });
   }
-  // What holds the triggers: the mouse buttons, the tests, and on a phone the auto-fire.
+  // What holds the triggers: the mouse buttons, the tests, and with the touch controls the
+  // auto-fire.
   const trigger = { back: false, belly: false, test: false, auto: false };
-  // On a phone the weapons fire themselves (auto-fire): per place, whether they do now.
+  // With the touch controls the weapons fire themselves (auto-fire): per place, whether they
+  // do now.
   const auto = { back: false, belly: false };
   const stones = [];
   let clock = 0,
@@ -148,12 +158,15 @@ export function createCombat(game) {
   // For tests: the last few deaths of the local fish that combat caused ({ t, by }).
   const deaths = [];
 
-  // The mouse buttons, while the pointer is caught and the fish can fight (on a phone, with
-  // no pointer to catch, whenever the fish can fight). (mousedown and mouseup come for each
-  // button, pointer events only for the first one pressed.)
-  const canFire = () => (game.now.locked || !!touchMode) && !game.now.paused && game.now.dead <= 0 && !game.celebration.active;
+  // The mouse buttons, while the pointer is caught and the fish can fight (with the touch
+  // controls, with no pointer to catch, whenever the fish can fight). (mousedown and mouseup
+  // come for each button, pointer events only for the first one pressed.)
+  const canFire = () => (game.now.locked || touching()) && !game.now.paused && game.now.dead <= 0 && !game.celebration.active;
   canvas.addEventListener("mousedown", (event) => {
-    if (!canFire()) return;
+    // (A real mouse's press has handed the controls to the mouse before it gets here (its
+    // pointerdown comes first); with touch still in use this is the mouse event a browser
+    // makes up for a tap, and the touch controls fire by themselves.)
+    if (touching() || !canFire()) return;
     if (event.button === 0) trigger.back = true;
     if (event.button === 2) trigger.belly = true;
   });
@@ -167,20 +180,34 @@ export function createCombat(game) {
   document.addEventListener("pointerlockchange", () => {
     if (!game.now.locked) trigger.back = trigger.belly = false;
   });
+  // The controls changing hands: whatever the other ones held lets go, so that no trigger is
+  // left down by a hand that has gone (a button held as a finger took over, the auto-fire of a
+  // moment ago as the mouse comes back); the new ones start from nothing, and the next step
+  // works the auto-fire out afresh where it is in use.
+  // And the tip on how the weapons fire, if it is still up for the other controls, goes: the
+  // one for these follows in the next step (if not seen before; see step).
+  const hintBox = document.querySelector("#hint");
+  let fireTip = null;
+  game.controls?.on?.(() => {
+    trigger.back = trigger.belly = false;
+    auto.back = auto.belly = false;
+    if (fireTip && hintBox && !hintBox.hidden && !hintBox.classList.contains("fading") && hintBox.innerHTML === fireTip) hintBox.hidden = true;
+    fireTip = null;
+  });
 
   // Before the smolt a fish carries one weapon, fired with the left button wherever it sits.
   function held(player, place) {
     const a = player.arsenal;
     const single = !(a.back && a.belly);
     if (trigger.test) return true;
-    if (touchMode || trigger.auto) return auto[place];
+    if (touching() || trigger.auto) return auto[place];
     if (single) return trigger.back;
     return place === "back" ? trigger.back : trigger.belly;
   }
 
-  // Auto-fire on a phone: a gun fires while the aim has an enemy in its reach (the aim's own
-  // pull onto a target near the middle of the view picks it); the katana cuts while an
-  // enemy is within its reach in front of the fish.
+  // Auto-fire with the touch controls: a gun fires while the aim has an enemy in its reach
+  // (the aim's own pull onto a target near the middle of the view picks it); the katana cuts
+  // while an enemy is within its reach in front of the fish.
   const toward = new THREE.Vector3();
   function autoFire(player) {
     const f = player.fish;
@@ -191,7 +218,7 @@ export function createCombat(game) {
       const w = WEAPONS[a[place]];
       if (w && w.mode !== "blade") reach = Math.max(reach, w.reach(L));
     }
-    aim.update(enemies.list, reach, touchMode ? TOUCH_ASSIST : undefined);
+    aim.update(enemies.list, reach, touching() ? TOUCH_ASSIST : undefined);
     for (const place of ["back", "belly"]) {
       const w = WEAPONS[a[place]];
       auto[place] = false;
@@ -551,8 +578,16 @@ export function createCombat(game) {
     if (dt <= 0) return;
     clock += dt;
     if (clock > 4) {
-      if (touchMode) game.hud.tip("fv-fire", "<b>Feuer frei!</b> Deine Waffe feuert von selbst, sobald ein Feind im Visier und in Reichweite ist. Alles, was kein Lachs ist, will dich fressen.", 11);
-      else game.hud.tip("fv-fire", "<b>Feuer frei!</b> Die linke Maustaste schießt mit deiner Waffe, die Leertaste bleibt Spurt, Biss und Sprung. Alles, was kein Lachs ist, will dich fressen.", 11);
+      // How the weapons fire, for the controls in use: once for those the device starts with
+      // (the tip's old name, so that it is not told twice), and once for the others when they
+      // are first taken up (a computer touched, a tablet with a mouse).
+      const touch = touching();
+      const kind = touch === handheld ? "fv-fire" : touch ? "fv-fire-touch" : "fv-fire-mouse";
+      const shown = touch
+        ? game.hud.tip(kind, "<b>Feuer frei!</b> Deine Waffe feuert von selbst, sobald ein Feind im Visier und in Reichweite ist. Alles, was kein Lachs ist, will dich fressen.", 11)
+        : game.hud.tip(kind, "<b>Feuer frei!</b> Die linke Maustaste schießt mit deiner Waffe, die Leertaste bleibt Spurt, Biss und Sprung. Alles, was kein Lachs ist, will dich fressen.", 11);
+      // (As it stands in the tip box, to know it there again.)
+      if (shown) fireTip = hintBox?.innerHTML ?? null;
     }
     local.down = game.now.dead > 0;
     // A death: the enemies fall back and no new ones come for a while, so the sibling that
@@ -578,7 +613,7 @@ export function createCombat(game) {
     wild.step();
     const L = fish.length;
     const w = WEAPONS[local.arsenal.back] ?? WEAPONS[local.arsenal.belly] ?? WEAPONS.piu;
-    if ((touchMode || trigger.auto) && !trigger.test) {
+    if ((touching() || trigger.auto) && !trigger.test) {
       if (canFire() || trigger.auto) autoFire(local);
       else auto.back = auto.belly = false;
     } else if (trigger.back || trigger.belly || trigger.test) aim.update(enemies.list, Math.max(w.reach(L), 4 * L));
@@ -774,7 +809,7 @@ export function createCombat(game) {
     fire(on) {
       trigger.test = !!on;
     },
-    // For tests: the phone's auto-fire, on a computer.
+    // For tests: the touch controls' auto-fire, whichever controls are in use.
     autoFire(on) {
       trigger.auto = !!on;
       if (!on) auto.back = auto.belly = false;

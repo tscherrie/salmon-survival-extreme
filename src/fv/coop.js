@@ -37,7 +37,7 @@ const CSS = `
 #intro .fv-coop .fv-open { width: 100%; height: 36px; padding: 0 16px; border-radius: 999px; color: inherit; background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); opacity: 0.9; }
 #intro .fv-coop .fv-open:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); opacity: 1; }
 /* (Sideways on a phone, where the card's rows are lower too, so that the card fits: card.js.) */
-@media (max-height: 500px) { .touch #intro .fv-coop .fv-open { height: 30px; } }
+@media (max-height: 500px) { .handheld #intro .fv-coop .fv-open { height: 30px; } }
 #intro .fv-coop .room { display: grid; gap: 12px; padding: 12px 16px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
 #intro .fv-coop .head { display: flex; align-items: center; gap: 4px; min-height: 28px; }
 #intro .fv-coop .head .title { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; opacity: 0.6; }
@@ -57,7 +57,8 @@ const CSS = `
 #intro .fv-coop .me { display: flex; gap: 8px; }
 #intro .fv-coop .me input { flex: 1; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 12px; border-radius: 999px; border: 0; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.25); color: inherit; font: 600 14px/1 var(--hud-font); }
 #intro .fv-coop .me input:focus-visible { outline: 3px solid #ffd98a; outline-offset: 2px; }
-.touch #intro .fv-coop .me input { font-size: 16px; }
+/* (16 px on a phone or a tablet: smaller, and iOS zooms the page in on the field.) */
+.handheld #intro .fv-coop .me input { font-size: 16px; }
 #intro .fv-coop .me button { flex: none; height: 36px; padding: 0 20px; border-radius: 999px; font-size: 14px; font-weight: 800; }
 #intro .fv-coop .me button.on { color: inherit; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
 #intro .fv-coop .fv-note { margin: 0; font-size: 12px; line-height: 1.4; opacity: 0.7; }

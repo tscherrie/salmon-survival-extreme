@@ -25,7 +25,8 @@ import { createSave, savedStage } from "./save.js";
 import { createSound } from "./sound.js";
 import { createPebbles } from "./pebbles.js";
 import { COATS, MODEL_LENGTH, createFishMesh, refreshFishView, setFishQuality, setFishView } from "./anatomy.js";
-import { createQualityChoice, isDesktop, qualityName as qualityLabel, showIntro, showPhoneNotice } from "./intro.js";
+import { createQualityChoice, qualityName as qualityLabel, showIntro, showPhoneNotice } from "./intro.js";
+import { createControls, handheldDevice } from "./controls.js";
 import { MONTHS, conditions, forceYear, thermal, updateConditions, waterTemperature } from "./seasons.js";
 import { createNets } from "./nets.js";
 import { CATALOGUE, createLogbook } from "./logbook.js";
@@ -73,10 +74,21 @@ const smooth = (a, b, x) => {
 
 // Development runs (the capture harness, a jump to a stage or place) skip the title card.
 const dev = ["capture", "diagnostics", "stage", "at", "pace", "season", "year"].some((k) => query.has(k));
-// On a phone or a tablet (or with ?touch): the touch controls, a lighter picture, the HUD
-// laid out for a small screen held sideways.
-const touchMode = query.has("touch") || (!dev && !isDesktop());
-if (touchMode) habitat.classList.add("touch");
+// On a phone or a tablet (src/controls.js tells it by what the browser runs on): a lighter
+// picture, the HUD laid out for a small screen held sideways, and the touch controls to begin
+// with. The controls then follow the hand on any device -- a mouse or a key, a finger on the
+// river -- unless ?touch or ?desktop (?mouse) holds one of them. (?handheld: a phone's
+// defaults and layout on a computer, to look at them there.)
+const handheld = query.has("handheld") || (!dev && handheldDevice());
+const pinnedScheme = query.has("touch") ? "touch" : query.has("desktop") || query.has("mouse") ? "mouse" : null;
+const controls = createControls({
+  habitat,
+  handheld,
+  scheme: pinnedScheme ?? (handheld ? "touch" : "mouse"),
+  pinned: !!pinnedScheme,
+  // (A finger on the river, on the touch controls, or on the button that starts the swim.)
+  river: (target) => target === canvas || !!target?.closest?.("#touch, #intro-start"),
+});
 const QUALITY_KEY = "salmon-quality";
 function storedQuality() {
   try {
@@ -162,9 +174,9 @@ async function start() {
   // The graphics quality: ?quality= in the address, else what the player chose (on the card
   // or at the graphics button, G -- setQuality below), else Detail on a computer and
   // Balanced on a phone.
-  const recommended = touchMode ? "balanced" : "detail";
+  const recommended = handheld ? "balanced" : "detail";
   const profile = qualityName(query.get("quality") || storedQuality() || recommended);
-  const quality = createQualityChoice({ current: profile, recommended, touch: touchMode, onPick: (name) => setQuality(name) });
+  const quality = createQualityChoice({ current: profile, recommended, touch: handheld, onPick: (name) => setQuality(name) });
   // Until the river is built, nothing to save; the corner buttons come in when they work.
   let built = false;
   habitat.classList.add("building");
@@ -180,7 +192,7 @@ async function start() {
   // map, fewer steps in the light shafts, plain shadow edges.
   const gameSettings = () => {
     const base = renderSettings({ profile, pixelRatio: devicePixelRatio });
-    if (touchMode) return { ...base, resolution: Math.min(devicePixelRatio || 1, 3), shaftSteps: Math.min(base.shaftSteps, 10), maxPixels: 3.7e6, shadowSize: Math.min(base.shadowSize, 1024) };
+    if (handheld) return { ...base, resolution: Math.min(devicePixelRatio || 1, 3), shaftSteps: Math.min(base.shaftSteps, 10), maxPixels: 3.7e6, shadowSize: Math.min(base.shadowSize, 1024) };
     // Ultra: every pixel of the screen, and the shafts a little denser.
     if (profile === "ultra") return { ...base, shaftSteps: Math.min(base.shaftSteps, 32) };
     return { ...base, shaftSteps: Math.min(base.shaftSteps, 24), maxPixels: Math.min(base.maxPixels, 2.4e6) };
@@ -237,7 +249,7 @@ async function start() {
   const shadowRadius = Math.max(2, Math.round((2.5 * settings.shadowSize) / 4096));
   key.shadow.radius = shadowRadius;
   // Soft shadows that harden toward contact (render/shadows.js), where frames are blended.
-  if (settings.taa && !touchMode) key.shadow.filterNode = softShadowFilter({ blockerSamples: pcss[0] || (settings.detail ? 16 : 6), filterSamples: pcss[1] || (settings.detail ? 24 : 10), frustum: 44 });
+  if (settings.taa && !handheld) key.shadow.filterNode = softShadowFilter({ blockerSamples: pcss[0] || (settings.detail ? 16 : 6), filterSamples: pcss[1] || (settings.detail ? 24 : 10), frustum: 44 });
   scene.add(key, key.target);
   // The leaves' glow from behind takes the sky's light (render/foliage.js).
   foliageSky(sky);
@@ -508,7 +520,7 @@ async function start() {
     if (value) {
       freeThePointer();
       if (dead <= 0 && !fish.airborne) persist();
-      intro.pause({ saved: stageLabel(fish.stage, save.generation), touch: touchMode });
+      intro.pause({ saved: stageLabel(fish.stage, save.generation) });
     } else {
       intro.resume();
       closeQuality();
@@ -538,17 +550,18 @@ async function start() {
     if (wantFullscreen && !document.fullscreenElement && habitat.requestFullscreen)
       Promise.resolve(habitat.requestFullscreen({ navigationUI: "hide" }))
         // On a phone, held sideways from then on (where the browser lets a page ask).
-        .then(() => touchMode && screen.orientation?.lock?.("landscape"))
+        .then(() => handheld && screen.orientation?.lock?.("landscape"))
         .catch(() => {});
-    // (Not while paused: F there only goes full screen, the card's buttons want the pointer.)
-    if (!touchMode && !userPaused) Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
+    // (Not while paused: F there only goes full screen, the card's buttons want the pointer.
+    // Nor with the touch controls in use: a finger steers without it.)
+    if (!controls.touch && !userPaused) Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
   }
   let wasFullscreen = false;
   document.addEventListener("fullscreenchange", () => {
     const now = !!document.fullscreenElement;
     if (wasFullscreen && !now && !waiting && dead <= 0) setPaused(true);
     // Some browsers let the pointer go on the way into full screen: take it again.
-    if (now && !touchMode && !locked() && !waiting && !userPaused && !logbook.open) Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
+    if (now && !controls.touch && !locked() && !waiting && !userPaused && !logbook.open) Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
     wasFullscreen = now;
   });
   document.querySelector("#logbook-toggle").addEventListener("click", (event) => {
@@ -723,28 +736,33 @@ async function start() {
   });
   window.addEventListener("blur", () => held.clear());
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
-  canvas.addEventListener("pointerdown", (event) => {
+  // A press on the river: back into the game (out of the pause, the pointer captured), and
+  // with the pointer captured the left button lunges. A finger put down on it (the touch
+  // controls taken up with it, or the pause tapped away) steers from there on.
+  function pressRiver(event) {
     // (Before the swim the title card's button starts it, not a click on the river.)
     if (waiting) return;
     sound.start();
     hud.touched();
     if (userPaused) setPaused(false);
-    if (!locked()) {
+    if (controls.touch || !locked()) {
       look.yaw = fish.yaw;
       look.pitch = fish.pitch;
       capture();
+      if (controls.touch) touch?.adopt(event);
       return;
     }
     if (event.button === 0 && !mods.some((mod) => mod.takesButton?.(0)) && !startCharge()) lungeQueued = true;
-  });
+  }
+  canvas.addEventListener("pointerdown", pressRiver);
   canvas.addEventListener("pointerup", (event) => {
-    if (event.button === 0 && !mods.some((mod) => mod.takesButton?.(0))) releaseCharge();
+    if (event.button === 0 && !controls.touch && !mods.some((mod) => mod.takesButton?.(0))) releaseCharge();
   });
   document.addEventListener("pointerlockchange", () => {
     habitat.classList.toggle("locked", locked());
-    // Never caught while a card is up (the title card, the pause, the logbook): a request
-    // still under way when it came up is let go at once.
-    if (locked() && (userPaused || waiting || logbook.open)) {
+    // Never caught while a card is up (the title card, the pause, the logbook), nor once the
+    // touch controls have taken over: a request still under way then is let go at once.
+    if (locked() && (userPaused || waiting || logbook.open || controls.touch)) {
       releasing = true;
       document.exitPointerLock?.();
       return;
@@ -771,29 +789,54 @@ async function start() {
     },
     { passive: false },
   );
-  // On a phone: dragging to look and steer, the swim and dash buttons, pause, the map.
+  // The touch controls: dragging to look and steer, the swim and dash buttons, pause, the
+  // map. Made when they are first taken up (on a phone or a tablet at once).
   const TOUCH_LOOK = 0.007;
-  const touch = touchMode
-    ? createTouch({
-        habitat,
-        onTouch: () => {
-          sound.start();
-          hud.touched();
-          if (!document.fullscreenElement) capture();
-        },
-        onLunge: () => {
-          if (!userPaused && !startCharge()) lungeQueued = true;
-        },
-        onLungeEnd: () => releaseCharge(),
-        onLook: (dx, dy) => {
-          look.yaw += dx * TOUCH_LOOK;
-          look.pitch = clamp(look.pitch - dy * TOUCH_LOOK, -1.2, 1.2);
-        },
-        onPause: () => setPaused(true),
-      })
-    : null;
+  const makeTouch = () =>
+    createTouch({
+      habitat,
+      onTouch: () => {
+        sound.start();
+        hud.touched();
+        if (!document.fullscreenElement) capture();
+      },
+      onLunge: () => {
+        if (!userPaused && !startCharge()) lungeQueued = true;
+      },
+      onLungeEnd: () => releaseCharge(),
+      onLook: (dx, dy) => {
+        look.yaw += dx * TOUCH_LOOK;
+        look.pitch = clamp(look.pitch - dy * TOUCH_LOOK, -1.2, 1.2);
+      },
+      onPause: () => setPaused(true),
+      // (With touch held by ?touch the mouse is a finger: nothing would hand it the controls.)
+      fingersOnly: !controls.pinned,
+    });
+  let touch = handheld || controls.touch ? makeTouch() : null;
+  // The controls changing hands mid-game (src/controls.js): to touch, the touch controls come
+  // up and the pointer is let go; to the mouse, they go, and a click that fell on them (the
+  // cursor resting where they came up) does what it showed: their pause button pauses, and
+  // anywhere else on them it is a click on the river under them. The line with the controls,
+  // while still up, follows.
+  controls.on((scheme, event) => {
+    if (scheme === "touch") {
+      touch ??= makeTouch();
+      if (!waiting) touch.show();
+      if (locked()) {
+        releasing = true;
+        document.exitPointerLock?.();
+      }
+    } else if (touch) {
+      touch.release();
+      touch.hide();
+      const on = event?.type === "pointerdown" ? event.target?.closest?.("#touch") : null;
+      if (on && event.target.closest(".pause")) setPaused(true);
+      else if (on) pressRiver(event);
+    }
+    hud.controls(scheme === "touch");
+  });
   // Turned upright mid-swim: pause behind the note asking for it sideways again.
-  if (touchMode)
+  if (handheld)
     matchMedia("(orientation: portrait)").addEventListener("change", (event) => {
       if (event.matches && !waiting && dead <= 0) setPaused(true);
     });
@@ -1190,7 +1233,7 @@ async function start() {
     const sp = salmon.speeds();
     look.yaw += turn * sp.turn * dt;
     if (tilt) look.pitch = clamp(look.pitch + tilt * dt * 1.2, -1.2, 1.2);
-    if (!locked() && !turn && !tilt && !touchMode) {
+    if (!locked() && !turn && !tilt && !controls.touch) {
       // Without the mouse the view settles back behind the fish.
       look.yaw += Math.atan2(Math.sin(fish.yaw - look.yaw), Math.cos(fish.yaw - look.yaw)) * (1 - Math.exp(-dt * 0.8));
     }
@@ -2906,8 +2949,9 @@ async function start() {
   }
 
   // Extensions (src/mods.js) get the game's parts once, before the first frame, so that
-  // what they add to the scene is compiled with everything else.
-  const game = { scene, camera, renderer, canvas, habitat, query, settings, touchMode, salmon, fish, life, terrain, pebbles, features, falls, ripples, siblings, nets, hud, sound, badges, logbook, minimap, lifecard, save, brood, post, daylight, events, redd, drive, baitball, scent, world, stones, look, input, held, celebration, mirror, die, persist, respawn,
+  // what they add to the scene is compiled with everything else. (`touchMode` is whether the
+  // touch controls are in use at the moment it is read; `controls` is src/controls.js's.)
+  const game = { scene, camera, renderer, canvas, habitat, query, settings, get touchMode() { return controls.touch; }, controls, salmon, fish, life, terrain, pebbles, features, falls, ripples, siblings, nets, hud, sound, badges, logbook, minimap, lifecard, save, brood, post, daylight, events, redd, drive, baitball, scent, world, stones, look, input, held, celebration, mirror, die, persist, respawn,
     now: { get dead() { return dead; }, get time() { return time; }, get paused() { return userPaused || waiting || logbook.open; }, get locked() { return locked(); } } };
   for (const mod of mods) mod.init?.(game);
 
@@ -3008,9 +3052,9 @@ async function start() {
   const begin = () => {
     waiting = false;
     last = performance.now();
-    touch?.show();
+    if (controls.touch) (touch ??= makeTouch()).show();
     // The controls first; the tips wait until they have been read.
-    hud.hint(touchMode);
+    hud.hint(controls.touch);
     if ((!state || query.has("new")) && fish.stage === 0) hud.toast(STAGES[0].name, mode.vegan ? "Du bist geschlüpft! Dein Dottersack nährt dich – bleib nah am Kies und wachs heran." : "Du bist geschlüpft! Dein Dottersack nährt dich – bleib nah am Kies, und schnapp dir schon die ersten winzigen Larven.", 7);
     track("mode", { vegan: mode.vegan });
   };

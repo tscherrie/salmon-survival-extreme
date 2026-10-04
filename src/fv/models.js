@@ -185,7 +185,8 @@ export function createWeaponModels(scene, { mirror, clock, enemies, camera } = {
   const game = extreme.game;
   // The game's clock (paused with the world, slowed in the celebration).
   const timeOf = clock ?? (() => game?.now?.time ?? performance.now() / 1000);
-  const detail = !(game?.settings?.detail === false || game?.touchMode);
+  // (The lighter models on a phone or a tablet, whichever controls are in use on it.)
+  const detail = !(game?.settings?.detail === false || (game?.controls ? game.controls.handheld : game?.touchMode));
   const frames = Object.fromEntries(KINDS.map((kind) => [kind, bodyFrame(kind)]));
 
   // Every weapon on every body it can be worn on, built once and shared by all players: the

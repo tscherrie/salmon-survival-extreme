@@ -771,8 +771,8 @@
 #intro .vegan input:checked + .switch::after { transform: translateX(18px); }
 #intro .vegan input:focus-visible + .switch { outline: 2px solid #ffd98a; outline-offset: 2px; }
 
-/* The keys: small and quiet, at the bottom; the touch controls instead on a phone or a
-   tablet. */
+/* The keys: small and quiet, at the bottom; the touch controls instead while those are in
+   use (#habitat.touch, src/controls.js), and the P on the pause card's button with the keys. */
 #intro .keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin: 24px 0 0; padding: 0; list-style: none; font-size: 12px; font-weight: 600; opacity: 0.6; }
 #intro .keys li { display: flex; align-items: center; gap: 5px; }
 #intro .keys kbd:not(.touch-key) { padding: 1px 5px; border-radius: 5px; font-size: 10.5px; }
@@ -783,6 +783,7 @@
 #intro .touch-keys { display: none; }
 .touch #intro .keys:not(.touch-keys) { display: none; }
 .touch #intro .touch-keys { display: flex; }
+.touch #intro #intro-start kbd { display: none; }
 
 /* GitHub and the version, one line at the foot. */
 #intro .foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 8px; margin: 16px 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; opacity: 0.5; }
@@ -806,37 +807,37 @@
   #intro .settings .row:not(:first-child) > .label { margin-top: 8px; }
   #intro .settings :is(.seg, .quality-picker .options) button { flex: 1 1 auto; min-width: 0; padding: 0 6px; }
 }
-/* Touch: sideways on a phone the card is short, so everything sits a little closer, and the
-   title keeps to one line. */
-.touch #intro .card { max-height: calc(100dvh - 24px); padding: 18px 20px 14px; }
-.touch #intro h1 { font-size: clamp(24px, 4vw, 32px); }
-.touch #intro.paused h1 { font-size: 24px; }
-.touch #intro .lead { margin-top: 8px; font-size: 14px; }
-.touch #intro .primary,
-.touch #intro .settings,
-.touch #intro .keys { margin-top: 16px; }
-.touch #intro #intro-start { height: 46px; }
+/* A phone or a tablet (#habitat.handheld): sideways on a phone the card is short, so
+   everything sits a little closer, and the title keeps to one line. */
+.handheld #intro .card { max-height: calc(100dvh - 24px); padding: 18px 20px 14px; }
+.handheld #intro h1 { font-size: clamp(24px, 4vw, 32px); }
+.handheld #intro.paused h1 { font-size: 24px; }
+.handheld #intro .lead { margin-top: 8px; font-size: 14px; }
+.handheld #intro .primary,
+.handheld #intro .settings,
+.handheld #intro .keys { margin-top: 16px; }
+.handheld #intro #intro-start { height: 46px; }
 /* Sideways on a phone the corner buttons' labels reach in from the right: the card keeps
    clear of them as far as the screen allows, its buttons as wide as their words. And it is
    only as high as the screen: tighter still, so that the whole card fits without scrolling
    (the rows a little lower, all of them alike). */
 @media (max-height: 500px) {
-  .touch #intro .card { width: clamp(400px, 100vw - 392px, 34em); padding: 14px 18px 12px; }
-  .touch #intro .kicker { margin-bottom: 4px; }
-  .touch #intro h1 { font-size: 28px; }
-  .touch #intro .lead { margin-top: 6px; font-size: 13.5px; line-height: 1.4; }
-  .touch #intro .homescreen { margin-top: 10px; padding: 7px 12px; }
-  .touch #intro .primary,
-  .touch #intro .settings,
-  .touch #intro .keys { margin-top: 12px; }
-  .touch #intro #intro-start { height: 44px; }
-  .touch #intro .sub > * { margin-top: 6px; }
-  .touch #intro .settings { row-gap: 6px; }
-  .touch #intro .settings :is(.seg, .quality-picker .options) { padding: 2px; }
-  .touch #intro .settings :is(.seg, .quality-picker .options) button { flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 6px; }
-  .touch #intro .vegan { height: 32px; }
-  .touch #intro .keys { row-gap: 4px; }
-  .touch #intro .foot { margin-top: 10px; }
+  .handheld #intro .card { width: clamp(400px, 100vw - 392px, 34em); padding: 14px 18px 12px; }
+  .handheld #intro .kicker { margin-bottom: 4px; }
+  .handheld #intro h1 { font-size: 28px; }
+  .handheld #intro .lead { margin-top: 6px; font-size: 13.5px; line-height: 1.4; }
+  .handheld #intro .homescreen { margin-top: 10px; padding: 7px 12px; }
+  .handheld #intro .primary,
+  .handheld #intro .settings,
+  .handheld #intro .keys { margin-top: 12px; }
+  .handheld #intro #intro-start { height: 44px; }
+  .handheld #intro .sub > * { margin-top: 6px; }
+  .handheld #intro .settings { row-gap: 6px; }
+  .handheld #intro .settings :is(.seg, .quality-picker .options) { padding: 2px; }
+  .handheld #intro .settings :is(.seg, .quality-picker .options) button { flex: 1 1 auto; min-width: 0; height: 28px; padding: 0 6px; }
+  .handheld #intro .vegan { height: 32px; }
+  .handheld #intro .keys { row-gap: 4px; }
+  .handheld #intro .foot { margin-top: 10px; }
 }
 
 /* Fades: a death, a new generation. */
@@ -948,8 +949,10 @@
 }
 
 /* ---------------------------------------------------------------------------------------
-   Phones and tablets, held sideways (#habitat.touch): the swim and dash buttons, the map
-   coming in from the right, the HUD as three rings, the tips up top out of the way. */
+   The touch controls in use (#habitat.touch: on a phone or a tablet, or a touch screen
+   touched): the swim and dash buttons, the map out of their way. On a phone or a tablet,
+   held sideways (#habitat.handheld), also: the HUD as three rings, the tips up top, all of it
+   smaller. (src/controls.js says when which; a phone has both.) */
 
 /* The touch keys, drawn as the controls they stand for (in the tips and on the card). */
 #habitat kbd.touch-key {
@@ -1000,6 +1003,9 @@
 /* Paused: the controls give way to the buttons and a tap anywhere swims on. The map
    stays out of their way (its tab and the swipe are the way to it). */
 .touch.paused #touch { display: none; }
+/* A finger put down on the river steers from the first touch, which the browser would
+   otherwise begin to take as a pan before the touch controls are up over it. */
+#habitat #scene { touch-action: none; }
 
 /* The corner buttons only while the card is up (at the start or in the pause), as on the
    computer. */
@@ -1008,24 +1014,24 @@
 .touch:not(.menu) #map-toggle,
 .touch:not(.menu) #lore-toggle { opacity: 0 !important; visibility: hidden; pointer-events: none; }
 
-/* The HUD smaller, the tips at the top, the map half see-through coming in from the right. */
-.touch #hud { inset: 10px auto auto max(10px, env(safe-area-inset-left)); }
-.touch #watch { zoom: 0.78; }
+/* The HUD smaller, the tips at the top, the map small and half see-through. */
+.handheld #hud { inset: 10px auto auto max(10px, env(safe-area-inset-left)); }
+.handheld #watch { zoom: 0.78; }
 /* The card as just the three rings; a tap on them opens the full card, as on a computer
    (with the controls under it, so the HUD sits above them), another tap closes it. */
 #status .rings { display: none; }
 .touch #hud { z-index: 4; }
 /* With the card up, the corner buttons and their names over it (there is no pointer to hover). */
 .touch.menu #hud { z-index: 6; }
-.touch #status { pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.touch #status:not(.expanded) { display: block; width: 60px; height: 60px; padding: 3px; border-radius: 50%; }
-.touch #status:not(.expanded) > :not(.rings):not(#pops) { display: none; }
-.touch #status:not(.expanded) .rings { display: block; width: 54px; height: 54px; overflow: visible; }
-.touch #status.expanded { transform-origin: 30px 30px; animation: card-open 220ms ease-out; }
+.handheld #status { pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.handheld #status:not(.expanded) { display: block; width: 60px; height: 60px; padding: 3px; border-radius: 50%; }
+.handheld #status:not(.expanded) > :not(.rings):not(#pops) { display: none; }
+.handheld #status:not(.expanded) .rings { display: block; width: 54px; height: 54px; overflow: visible; }
+.handheld #status.expanded { transform-origin: 30px 30px; animation: card-open 220ms ease-out; }
 @keyframes card-open { from { opacity: 0; transform: scale(0.5); } }
 /* With the card open the tips move over to its right. */
-.touch.stats-open #hint { left: calc(max(10px, env(safe-area-inset-left)) + 290px); transform: none; max-width: calc(100vw - max(10px, env(safe-area-inset-left)) - max(14px, env(safe-area-inset-right)) - 360px); }
-.touch #pops { left: calc(100% + 6px); bottom: 4px; }
+.handheld.stats-open #hint { left: calc(max(10px, env(safe-area-inset-left)) + 290px); transform: none; max-width: calc(100vw - max(10px, env(safe-area-inset-left)) - max(14px, env(safe-area-inset-right)) - 360px); }
+.handheld #pops { left: calc(100% + 6px); bottom: 4px; }
 .rings .track { fill: none; stroke: rgba(0, 12, 16, 0.55); stroke-width: 5.5; }
 .rings .ring { fill: none; stroke-width: 5.5; stroke-linecap: round; transition: stroke-dasharray 300ms ease-out, stroke 400ms ease; }
 .rings .ring.none { stroke-linecap: butt; }
@@ -1041,32 +1047,38 @@
 @keyframes ring-blink { 50% { stroke: #ff5a4a; opacity: 0.45; } }
 .rings.waiting .growth-now { stroke: #ffd98a; animation: wait-glow 1.8s ease-in-out infinite; }
 .rings .stage-number { fill: #f3fbf7; font: 800 10px/1 var(--hud-font); text-anchor: middle; dominant-baseline: central; }
-.touch #badges { top: 82px; zoom: 0.8; }
+.handheld #badges { top: 82px; zoom: 0.8; }
 .touch #sound-toggle .label kbd, .touch #logbook-toggle .label kbd, .touch #map-toggle .label kbd, .touch #lore-toggle .label kbd { display: none; }
-.touch #hint { bottom: auto; top: 10px; max-width: min(46vw, 440px); padding: 7px 12px; font-size: 12px; line-height: 1.45; }
-.touch #hint.lore { font-size: 12.5px; }
-.touch #hint { z-index: 5; pointer-events: auto; touch-action: none; transition: opacity 900ms ease, translate 250ms ease; -webkit-user-select: none; user-select: none; }
-.touch #hint::after { content: ""; display: block; width: 34px; height: 4px; margin: 5px auto -2px; border-radius: 2px; background: rgba(255, 255, 255, 0.3); }
-.touch #status { touch-action: manipulation; }
+.handheld #hint { bottom: auto; top: 10px; max-width: min(46vw, 440px); padding: 7px 12px; font-size: 12px; line-height: 1.45; }
+.handheld #hint.lore { font-size: 12.5px; }
+.handheld #hint { z-index: 5; pointer-events: auto; touch-action: none; transition: opacity 900ms ease, translate 250ms ease; -webkit-user-select: none; user-select: none; }
+.handheld #hint::after { content: ""; display: block; width: 34px; height: 4px; margin: 5px auto -2px; border-radius: 2px; background: rgba(255, 255, 255, 0.3); }
+.handheld #status { touch-action: manipulation; }
+/* The map: small and half see-through on a small screen; with the touch controls in use,
+   over in the bottom left corner, as the swim and dash buttons have the right. */
+.handheld #minimap {
+  transform: scale(0.58);
+  transform-origin: bottom right;
+  opacity: 0.55;
+  animation: none;
+}
 .touch #minimap {
   top: auto;
   right: auto;
   bottom: max(8px, env(safe-area-inset-bottom));
   left: max(8px, env(safe-area-inset-left));
-  transform: scale(0.58);
   transform-origin: bottom left;
-  opacity: 0.55;
   pointer-events: none;
   animation: none;
 }
 .touch #scene:focus, .touch #scene:focus-visible { outline: none; }
-.touch #toast .title { font-size: clamp(22px, 4vw, 34px); }
-.touch #toast .line { font-size: 13px; }
+.handheld #toast .title { font-size: clamp(22px, 4vw, 34px); }
+.handheld #toast .line { font-size: 13px; }
 
 /* Held upright: ask for it sideways. */
 #rotate { display: none; }
 @media (orientation: portrait) {
-  .touch #rotate {
+  .handheld #rotate {
     position: fixed;
     inset: 0;
     z-index: 20;
@@ -1079,7 +1091,7 @@
     font: 700 16px/1.4 var(--hud-font);
     text-align: center;
   }
-  .touch #rotate .phone { width: 46px; height: 80px; border: 3px solid currentColor; border-radius: 10px; animation: turn-phone 2.2s ease-in-out infinite; }
+  .handheld #rotate .phone { width: 46px; height: 80px; border: 3px solid currentColor; border-radius: 10px; animation: turn-phone 2.2s ease-in-out infinite; }
 }
 @keyframes turn-phone { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
 
@@ -1357,7 +1369,7 @@
 #journey[hidden] { display: none; }
 #journey:hover { background: rgba(10, 34, 40, 0.75); }
 #journey kbd { font: 800 11px/1 var(--hud-font); padding: 3px 6px; border-radius: 5px; background: rgba(255, 255, 255, 0.16); color: #fff; }
-#habitat.touch #journey { bottom: max(12px, env(safe-area-inset-bottom)); padding: 11px 16px; font-size: 12px; }
+#habitat.handheld #journey { bottom: max(12px, env(safe-area-inset-bottom)); padding: 11px 16px; font-size: 12px; }
 #habitat.touch #journey kbd { display: none; }
 @keyframes journey-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 /* The scent of home: how strong, and whether it grows the way the fish swims. */
@@ -1370,7 +1382,7 @@
 #scentbar.warmer { box-shadow: 0 0 0 1.5px rgba(255, 217, 138, 0.55), 0 4px 18px rgba(0, 0, 0, 0.3); }
 #scentbar.strange .fill { background: linear-gradient(90deg, #8a7fa6, #b9b0cf); }
 #scentbar.strange .way { color: #c9bde8; }
-#habitat.touch #scentbar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }
+#habitat.handheld #scentbar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }
 /* The finale: by her side until she is ready. */
 #reddbar { position: fixed; z-index: 3; left: 50%; bottom: 96px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: rgba(0, 14, 18, 0.55); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3); pointer-events: none; font: 800 12px/1 var(--hud-font); color: #f3fbf7; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); white-space: nowrap; }
 #reddbar[hidden] { display: none; }
@@ -1378,14 +1390,14 @@
 #reddbar .fill { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: linear-gradient(90deg, #ff9a6b, #ffd3b0); }
 #reddbar .way { min-width: 90px; color: #ffe6d6; }
 #reddbar.rival { background: rgba(80, 8, 8, 0.6); box-shadow: 0 0 0 2px rgba(255, 110, 90, 0.7), 0 4px 18px rgba(0, 0, 0, 0.3); }
-#habitat.touch #reddbar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }
+#habitat.handheld #reddbar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }
 /* The bait ball's bar is the drive's; its arrow is green. */
 #huntbar { position: fixed; z-index: 3; left: 50%; bottom: 96px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: rgba(0, 14, 18, 0.55); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3); pointer-events: none; font: 800 12px/1 var(--hud-font); color: #f3fbf7; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); white-space: nowrap; }
 #huntbar[hidden] { display: none; }
 #huntbar .track { position: relative; width: min(220px, 30vw); height: 8px; border-radius: 6px; overflow: hidden; background: rgba(255, 255, 255, 0.16); }
 #huntbar .fill { position: absolute; inset: 0; transform-origin: left; transform: scaleX(1); background: linear-gradient(90deg, #ffc86b, #fff0c4); }
 #huntbar .count b { font-size: 14px; }
-#habitat.touch #huntbar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }
+#habitat.handheld #huntbar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }
 #threats .threat.goal { color: #7fe6a8; }
 /* (The hunters' arrows get their opacity from how near the danger is; the way to the ball is always plain.) */
 #threats .threat.goal.on { opacity: 1; }
@@ -1396,4 +1408,4 @@
 #drivebar .fill { position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: linear-gradient(90deg, #7fd7ff, #d9f6ff); }
 #drivebar .count b { font-size: 14px; }
 #drivebar.alone { background: rgba(80, 8, 8, 0.6); box-shadow: 0 0 0 2px rgba(255, 110, 90, 0.7), 0 4px 18px rgba(0, 0, 0, 0.3); }
-#habitat.touch #drivebar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }
+#habitat.handheld #drivebar { bottom: max(12px, env(safe-area-inset-bottom)); padding: 6px 12px; font-size: 11px; }

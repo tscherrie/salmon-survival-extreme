@@ -2,9 +2,10 @@
 // for a hit and a sink, the call-outs ("Treffer!", "Versenkt!"), and the weapon cards in the
 // bottom-left corner, the one corner the game leaves free: for each weapon how hot it is, how
 // much fuel is left, or its rounds as pips and the magazine filling while it reloads, and a
-// word when it cannot fire ("Überhitzt", "Leer", "Nachladen"). On a phone the crosshair
-// shows whenever the fish is armed (there is no pointer to catch), and the cards name the
-// places instead of the mouse buttons.
+// word when it cannot fire ("Überhitzt", "Leer", "Nachladen"). With the touch controls in
+// use (#habitat.touch, which follows the hand: src/controls.js) the crosshair shows whenever
+// the fish is armed (there is no pointer to catch), and the cards name the places instead of
+// the mouse buttons; with the mouse, the crosshair shows while the pointer is caught.
 // The German texts are the source; the page's translation watch turns them into the chosen
 // language (fv/i18n.js has the words).
 
@@ -39,8 +40,10 @@ const CSS = `
 #arsenal .name { margin: 2px 0 6px; font-weight: 800; }
 #arsenal .card.flag .name::after { content: " · " attr(data-state); color: #ffd9a0; }
 #arsenal .card.locked .name::after { color: #ff7a5a; }
-#arsenal .heat { height: 4px; border-radius: 2px; background: rgba(238, 238, 222, 0.16); overflow: hidden; }
-#arsenal .heat i { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: 0 50%; background: linear-gradient(90deg, #ffd27a, #ff6a3a); will-change: transform; }
+/* (The bar as the card's child: a heat weapon's card carries the class "heat" itself, and
+   would be cut down to the bar's height.) */
+#arsenal .card > .heat { height: 4px; border-radius: 2px; background: rgba(238, 238, 222, 0.16); overflow: hidden; }
+#arsenal .card > .heat i { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: 0 50%; background: linear-gradient(90deg, #ffd27a, #ff6a3a); will-change: transform; }
 #arsenal .card.fuel .heat i { background: linear-gradient(90deg, #ff8a3a, #ffd27a); }
 #arsenal .card.shells .heat i { background: rgba(238, 238, 222, 0.75); }
 #arsenal .card.locked .heat i { background: #ff3b2e; }
@@ -120,10 +123,35 @@ export function createCombatHud(habitat, { weapons }) {
     armed = null,
     hot = null;
 
+  // With the touch controls in use the base game's map moves into this corner, as the swim
+  // and dash buttons take the right one (on a computer whose screen was touched, at its full
+  // size). The cards then stand on top of the map, as high as it reaches (smaller on a phone,
+  // without its strip on a low screen), and go back down when it is put away or the mouse
+  // takes over. (Looked at four times a second, as the map, the controls and the window all
+  // move it.)
+  const map = document.querySelector("#minimap");
+  let placedAt = -Infinity,
+    lift = null;
+  function place() {
+    const now = performance.now();
+    if (now - placedAt < 250) return;
+    placedAt = now;
+    let next = "";
+    if (map && habitat.classList.contains("touch") && !map.hidden) {
+      const r = map.getBoundingClientRect();
+      if (r.height > 0 && r.left < innerWidth / 2) next = `${Math.round(innerHeight - r.top + 8)}px`;
+    }
+    if (next !== lift) {
+      lift = next;
+      arsenal.style.bottom = next;
+    }
+  }
+
   return {
     // `a` the arsenal, or null when nothing is carried.
     update(dt, a) {
       clock += dt;
+      place();
       const on = !!a;
       if (on !== armed) {
         armed = on;

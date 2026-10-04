@@ -2,25 +2,19 @@
 // starts the swim (which is also the click the browser needs before it plays sound or
 // captures the mouse), the settings -- the graphics, the language, vegan mode -- and the
 // controls, small, at the bottom: the keys with a keyboard and a mouse, the touch controls
-// on a phone or a tablet (src/touch.js). Paused mid-swim, the same card comes back as the
-// pause, with everything on it and a way to start a new game; its button swims on. Either
-// way the river stays in sight behind it, neither blurred nor darkened, and the buttons in
-// the corner can be used (#habitat.menu). The card is laid out in the page (index.html);
-// what is filled in here is filled in before it first shows.
+// while those are in use (src/controls.js, src/touch.js). Paused mid-swim, the same card
+// comes back as the pause, with everything on it and a way to start a new game; its button
+// swims on. Either way the river stays in sight behind it, neither blurred nor darkened, and
+// the buttons in the corner can be used (#habitat.menu). The card is laid out in the page
+// (index.html); what is filled in here is filled in before it first shows.
 //
 // An extension (src/mods.js) adds to it as its module loads, before the card goes up: a
 // panel of its own in the place under the start (#intro-extension), a row of its own in
 // the settings (settingsRow below).
 
-export function isDesktop() {
-  const ua = navigator.userAgent;
-  const mobile = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|Opera Mini/i.test(ua);
-  // iPadOS presents itself as a Mac, but a Mac has no touch screen.
-  const iPad = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
-  const pointer = matchMedia("(pointer: fine)").matches || matchMedia("(any-pointer: fine)").matches;
-  const hover = matchMedia("(hover: hover)").matches || matchMedia("(any-hover: hover)").matches;
-  return !mobile && !iPad && pointer && hover;
-}
+// (Whether this is a computer rather than a phone or a tablet is src/controls.js's to say
+// now, by what the browser runs on; the old name stays for anything that still asks here.)
+export { isDesktop } from "./controls.js";
 
 import { VERSION } from "./version.js";
 import { clearSave } from "./save.js";
@@ -388,18 +382,18 @@ export function showIntro({ resume = null, title = true, quality = null, onResum
       });
     },
     // Paused: the card over the river as it is, with the fish's stage as saved; the
-    // button, P or a click beside the card swims on.
-    pause({ saved = null, touch = false } = {}) {
+    // button, P or a click beside the card swims on. (The P is there for the keyboard; with
+    // the touch controls in use it is not shown, style.css, as they may change hands on the
+    // card itself.)
+    pause({ saved = null } = {}) {
       paused = true;
       intro.classList.add("paused");
       if (kicker) kicker.hidden = false;
       button.disabled = false;
       button.textContent = "Weiterschwimmen";
-      if (!touch) {
-        const key = document.createElement("kbd");
-        key.textContent = "P";
-        button.append(" ", key);
-      }
+      const key = document.createElement("kbd");
+      key.textContent = "P";
+      button.append(" ", key);
       status.textContent = saved ? `Gespeichert: ${saved}` : "";
       if (vegan) vegan.checked = mode.vegan;
       if (fresh) {
