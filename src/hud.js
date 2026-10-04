@@ -29,8 +29,9 @@ const FOOD_NAMES = {
   pellet: "Futterpellet",
 };
 
-// On a phone the keys the tips name are the touch controls: each key drawn as the button
-// or the stick that does the same (whatever the language the key was written in).
+// With the touch controls in use (#habitat.touch, src/controls.js) the keys the tips name are
+// those controls: each key drawn as the button or the stick that does the same (whatever the
+// language the key was written in).
 const TOUCH_KEYS = [
   [/^(Leertaste|Space|空格|スペース|Интервал)$/i, "bite"],
   [/^W$/i, "go"],
@@ -99,7 +100,22 @@ export function createHud({ stages }) {
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toastBox.classList.remove("shown"), seconds * 1000);
   }
+  // The line with the controls (`hint` below), for the touch controls or for the mouse and the
+  // keyboard; which of them it shows while it is up (null when it is not).
+  let controlsShown = null;
+  function showControls(touch) {
+    hintBox.classList.remove("lore");
+    hintBox.innerHTML = t(
+      touch
+        ? "Wischen: umschauen und lenken · <kbd>W</kbd> halten: schwimmen · <kbd>Leertaste</kbd> Spurt, Biss, Sprung – oder den Daumen hinüberrutschen · Karte ein/aus im Pausemenü"
+        : "Klick ins Bild: Maus lenkt · <kbd>W</kbd> schwimmen · <kbd>S</kbd> bremsen · <kbd>A</kbd>/<kbd>D</kbd> ausweichen · <kbd>Leertaste</kbd> Spurt, Biss, Sprung · <kbd>M</kbd> Karte · <kbd>L</kbd> Logbuch · <kbd>P</kbd> Pause",
+    );
+    touchKeys(hintBox);
+    hintBox.hidden = false;
+    controlsShown = touch;
+  }
   function showHint(html, seconds, lore = false) {
+    controlsShown = null;
     hintBox.innerHTML = lore ? html : t(html);
     touchKeys(hintBox);
     hintBox.classList.toggle("lore", lore);
@@ -122,14 +138,14 @@ export function createHud({ stages }) {
   const ring = (name) => rings?.querySelector(`.${name}`);
   const ringOf = { energyNow: ring("energy-now"), energyReach: ring("energy-reach"), growthNow: ring("growth-now"), growthPending: ring("growth-pending"), stomachNow: ring("stomach-now"), stomachTrack: ring("stomach-track") };
   const stageNumber = rings?.querySelector(".stage-number");
-  // On a phone only the rings show; a tap on them opens the full card (as on a computer),
-  // another tap closes it again.
+  // On a phone or a tablet (#habitat.handheld) only the rings show; a tap on them opens the
+  // full card (as on a computer), another tap closes it again.
   // (On the lifting of the finger, and on click as well -- whichever comes first.)
   const statusBox = document.querySelector("#status");
   let toggledAt = 0;
   const toggleCard = (event) => {
     const habitat = document.querySelector("#habitat");
-    if (!habitat?.classList.contains("touch")) return;
+    if (!habitat?.classList.contains("handheld")) return;
     event.stopPropagation();
     const now = performance.now();
     if (now - toggledAt < 450) return;
@@ -139,10 +155,10 @@ export function createHud({ stages }) {
   };
   statusBox.addEventListener("pointerup", toggleCard);
   statusBox.addEventListener("click", toggleCard);
-  // On a phone a tip or a story is a banner at the top: swiped up, it goes.
+  // On a phone or a tablet a tip or a story is a banner at the top: swiped up, it goes.
   let swipe = null;
   hintBox.addEventListener("pointerdown", (event) => {
-    if (!document.querySelector("#habitat")?.classList.contains("touch")) return;
+    if (!document.querySelector("#habitat")?.classList.contains("handheld")) return;
     event.stopPropagation();
     swipe = { id: event.pointerId, y: event.clientY, dy: 0 };
     hintBox.setPointerCapture(event.pointerId);
@@ -423,15 +439,14 @@ export function createHud({ stages }) {
     hint(touch = false) {
       if (hintShown) return;
       hintShown = true;
-      hintBox.classList.remove("lore");
-      hintBox.innerHTML = t(
-        touch
-          ? "Wischen: umschauen und lenken · <kbd>W</kbd> halten: schwimmen · <kbd>Leertaste</kbd> Spurt, Biss, Sprung – oder den Daumen hinüberrutschen · Karte ein/aus im Pausemenü"
-          : "Klick ins Bild: Maus lenkt · <kbd>W</kbd> schwimmen · <kbd>S</kbd> bremsen · <kbd>A</kbd>/<kbd>D</kbd> ausweichen · <kbd>Leertaste</kbd> Spurt, Biss, Sprung · <kbd>M</kbd> Karte · <kbd>L</kbd> Logbuch · <kbd>P</kbd> Pause",
-      );
-      touchKeys(hintBox);
-      hintBox.hidden = false;
+      showControls(touch);
       hintTimer = setTimeout(() => this.touched(), 14000);
+    },
+    // The controls changed hands (src/controls.js) while their line is still up: the line for
+    // the ones now in use in its place, for as long as it had left.
+    controls(touch) {
+      if (hintBox.hidden || hintBox.classList.contains("fading") || controlsShown === null || controlsShown === touch) return;
+      showControls(touch);
     },
     touched() {
       if (hintBox.hidden || hintBox.classList.contains("fading")) return;

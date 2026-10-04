@@ -6,4 +6,7 @@
 //   frame(dt)          each frame, also while the world stands still
 //   keepRunning()      true: pause and logbook do not stop the world (a game shared online)
 //   takesButton(n)     true: mouse button n is the extension's, not the lunge's
+// The controls in use, the mouse and the keyboard or touch, can change hands mid-game (a
+// computer with a touch screen): game.controls (src/controls.js) has `touch` for the ones in
+// use now and `on(fn)` for each change; game.touchMode is `touch` at the moment it is read.
 export const mods = [];
