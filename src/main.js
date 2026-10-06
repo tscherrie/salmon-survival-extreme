@@ -1475,38 +1475,141 @@ async function start() {
   }
 
   // ------------------------------------------------------------------------------------
-  // The resolution follows the machine: when frames run long for a couple of seconds the
-  // image is drawn a step smaller (and scaled up), and when there is time to spare it
-  // climbs back, never straight back to a size that was just too much.
-  const frameRate = { average: 1 / 60, slow: 0, fast: 0, scale: 1, ceiling: 1 };
-  function adaptResolution(seconds) {
-    if (!(seconds > 0 && seconds < 0.25)) return;
+  // The resolution follows the machine, judged against the rate it can actually reach: 60
+  // frames a second (a faster screen is no reason to draw less), or 30 where even the
+  // smallest size cannot hold 60 or drawing smaller brings no faster frames -- a slow
+  // processor, or a screen or browser that shows only 30 (a phone in low power mode, a
+  // laptop saving its battery), where shrinking the picture would only spoil it. What a
+  // frame takes is read as the median of the last second, so that a single long one (a
+  // shader being built) moves nothing. When frames run long for two seconds the image is
+  // drawn a rung smaller (and scaled up), never below three quarters of the chosen quality's
+  // on a computer, so that the quality chosen still looks like itself (a phone, whose screen
+  // asks for far more pixels, may go to half); if the whole way down brings no faster
+  // frames, it goes back to where it started. Once frames keep to the rate for a few
+  // seconds it climbs back a rung; a rung that proved too much right after a climb waits
+  // longer each time before it is tried again.
+  const RUNGS = handheld ? [1, 0.88, 0.77, 0.68, 0.59, 0.5] : [1, 0.9, 0.82, 0.75];
+  const frameRate = {
+    // (The running average, for the ?fps box.)
+    average: 1 / 60,
+    rung: 0,
+    scale: 1,
+    goal: 1 / 60,
+    // The last second of frames: how long each took from one to the next.
+    intervals: [],
+    slow: 0,
+    held: 0,
+    quick: 0,
+    clock: 0,
+    // Seconds since the size last changed (only frames drawn at the size in use count).
+    since: 0,
+    // A way down under way: the rung it started from and how long frames took there.
+    descent: null,
+    // When it last climbed, and how long each rung must wait before it is tried again.
+    climbed: -Infinity,
+    blocked: RUNGS.map(() => ({ until: 0, wait: 15 })),
+    // The changes made, for looking into (?diagnostics: salmon.frameRate).
+    history: [],
+  };
+  const sorted = [];
+  const median = (list) => {
+    sorted.length = 0;
+    for (const x of list) sorted.push(x);
+    sorted.sort((a, b) => a - b);
+    return sorted[sorted.length >> 1];
+  };
+  function note(why) {
     const f = frameRate;
-    f.average += (seconds - f.average) * 0.06;
-    f.ceiling = Math.min(1, f.ceiling + seconds * 0.002);
-    if (f.average > 1 / 46) (f.slow += seconds), (f.fast = 0);
-    else if (f.average < 1 / 57) (f.fast += seconds), (f.slow = 0);
-    else f.slow = f.fast = 0;
-    if (f.slow > 1.5 && f.scale > 0.5) {
-      f.ceiling = f.scale * 0.96;
-      f.scale = Math.max(0.5, f.scale * 0.85);
+    f.history.push({ at: +(performance.now() / 1000).toFixed(1), scale: f.scale, goal: Math.round(1 / f.goal), why });
+    if (f.history.length > 50) f.history.shift();
+  }
+  function setRung(rung, why) {
+    const f = frameRate;
+    f.rung = rung;
+    f.scale = RUNGS[rung];
+    f.since = f.slow = f.held = 0;
+    f.intervals.length = 0;
+    note(why);
+    resize();
+  }
+  function adaptResolution(seconds) {
+    // (A long gap is the tab coming back, or the debugger: nothing to judge.)
+    if (!(seconds > 0 && seconds < 0.5)) return;
+    const f = frameRate;
+    f.average += (Math.min(seconds, 0.25) - f.average) * 0.06;
+    f.intervals.push(seconds);
+    if (f.intervals.length > 60) f.intervals.shift();
+    f.since += seconds;
+    f.clock += seconds;
+    if (f.clock < 0.25) return;
+    const dt = f.clock;
+    f.clock = 0;
+    // A second's worth of frames at this size before anything is judged.
+    if (f.since < 1 || f.intervals.length < 30) return;
+    const now = performance.now() / 1000;
+    const took = median(f.intervals);
+    const slow = took > f.goal * 1.12;
+    const bottom = RUNGS.length - 1;
+    // On the way down: keeping to the rate again ends it. Still too slow at the bottom rung,
+    // 60 cannot be held here, and 30 becomes the rate; and if the whole way down brought no
+    // faster frames, the pixels were not what held them up -- back to where it started.
+    if (f.descent && f.since >= 1.5) {
+      if (!slow) f.descent = null;
+      else if (f.rung === bottom) {
+        const { from, before } = f.descent;
+        f.descent = null;
+        f.goal = 1 / 30;
+        if (took > before * 0.95) setRung(from, "no gain");
+        else note("bottom");
+        return;
+      }
+    }
+    f.slow = slow ? f.slow + dt : 0;
+    if (f.slow >= (f.descent ? 1 : 2)) {
       f.slow = 0;
-      f.average = 1 / 52;
-      resize();
-    } else if (f.fast > 6 && f.scale < f.ceiling - 0.01) {
-      f.scale = Math.min(f.ceiling, f.scale / 0.9);
-      f.fast = 0;
-      resize();
+      if (f.rung < bottom) {
+        if (!f.descent) f.descent = { from: f.rung, before: took };
+        // Too slow within half a minute of a climb: that rung waits longer each time before
+        // another try, so that a size the machine only just manages is not swapped in and out.
+        if (now - f.climbed < 30) {
+          const b = f.blocked[f.rung];
+          b.until = now + b.wait;
+          b.wait = Math.min(240, b.wait * 2);
+        }
+        setRung(f.rung + 1, "slow");
+      } else if (f.goal < 1 / 30) {
+        f.goal = 1 / 30;
+        note("bottom");
+      }
+      return;
+    }
+    // Keeping to 60 again where 30 was settled for (lighter water, the battery charged).
+    f.quick = f.goal > 1 / 59 && took < (1 / 60) * 1.05 ? f.quick + dt : 0;
+    if (f.quick >= 3) {
+      f.quick = 0;
+      f.goal = 1 / 60;
+      note("60 again");
+    }
+    // Time to spare: frames keeping to the rate for a few seconds, a rung up.
+    const up = f.rung - 1;
+    f.held = !slow && !f.descent && up >= 0 && took <= f.goal * 1.05 && now >= f.blocked[up].until ? f.held + dt : 0;
+    if (f.held >= 3) {
+      f.climbed = now;
+      setRung(up, "held");
     }
   }
   const fpsBox = query.has("fps") ? Object.assign(document.createElement("div"), { id: "fps" }) : null;
   if (fpsBox) document.body.append(fpsBox);
 
+  // (How many pixels the chosen quality draws at its full size, for ?xslowpx.)
+  let fullPixels = 1;
   function resize() {
     const bounds = canvas.getBoundingClientRect();
     settings = gameSettings();
     const size = framebufferSize(bounds.width, bounds.height, settings.resolution * frameRate.scale, 8192, settings.maxPixels * frameRate.scale * frameRate.scale);
     if (!size) return;
+    const full = framebufferSize(bounds.width, bounds.height, settings.resolution, 8192, settings.maxPixels);
+    fullPixels = full.width * full.height;
     // With frames blended in time the picture goes to the screen at the screen's own
     // resolution (up to 4K), whatever the scene is drawn at: the blend fills in the rest.
     const screen = settings.taa ? framebufferSize(bounds.width, bounds.height, Math.min(devicePixelRatio || 1, 2), 8192, 8.3e6) : size;
@@ -3113,12 +3216,29 @@ async function start() {
         }
       } catch {}
     });
+  // (Development, for trying adaptResolution out: ?xslow=ms holds every frame up by that
+  // long, as a slow processor would; ?xslowpx=ms by that long times the share of the full
+  // picture being drawn, as a graphics card short of pixels would; ?xhitch=s,ms,n holds n
+  // frames up by ms each once the page is s seconds old, as building shaders does.)
+  const slowFixed = Number(query.get("xslow")) || 0;
+  const slowPixels = Number(query.get("xslowpx")) || 0;
+  const hitch = (query.get("xhitch") || "").split(",").map(Number);
+  let hitches = hitch[0] > 0 ? hitch[2] || 1 : 0;
+  function holdUp(began) {
+    let ms = slowFixed + slowPixels * ((post.main.width * post.main.height) / Math.max(1, fullPixels));
+    if (hitches > 0 && began / 1000 > hitch[0]) {
+      hitches--;
+      ms += hitch[1] || 200;
+    }
+    while (performance.now() - began < ms);
+  }
   function tick(now) {
     if (!running) return;
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     adaptResolution((now - last) / 1000);
-    if (fpsBox && frames % 15 === 0) fpsBox.textContent = `${Math.round(1 / frameRate.average)} fps · ${post.main.width}×${post.main.height} → ${renderer.domElement.width}×${renderer.domElement.height}`;
+    if (fpsBox && frames % 15 === 0) fpsBox.textContent = `${Math.round(1 / frameRate.average)} fps · ${Math.round(frameRate.scale * 100)} % (${Math.round(1 / frameRate.goal)}) · ${post.main.width}×${post.main.height} → ${renderer.domElement.width}×${renderer.domElement.height}`;
     last = now;
+    if (slowFixed || slowPixels || hitches) holdUp(performance.now());
     advance(dt);
     frameId = requestAnimationFrame(tick);
   }
@@ -3144,6 +3264,7 @@ async function start() {
   if (query.get("capture") || query.get("diagnostics") === "1" || query.has("shots"))
     window.salmon = {
       profile: prof,
+      frameRate,
       fish,
       salmon,
       terrain,
