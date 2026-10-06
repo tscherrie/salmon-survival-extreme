@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { S, bed, current, frame, level, place, relaid, section } from "./course.js";
 import { speeds } from "./salmon.js";
+import { carried } from "./vegan.js";
 
 // The drive: the smolt run's trial. Where the lower river spreads out wide and shallow at
 // the edges, a band of goosanders waits for the smolts coming down. They hunt together:
@@ -106,13 +107,14 @@ export function createDrive() {
       let s = lead.river.s;
       const c = section(Math.min(s, S.coast));
       current(s, lead.river.u, lead.position.y, flow, time, true);
-      // As fast as the fish swims, with the current -- a little slower when it lags just
-      // behind (a moment to catch up), not at all when it is far behind (left).
+      // As fast as the fish swims, with the current as it carries the fish (less in relax
+      // mode) -- a little slower when it lags just behind (a moment to catch up), not at all
+      // when it is far behind (left).
       const behind = s - fish.river.s;
       let pace = 0.95;
       if (behind < 0) pace = Math.min(1.5, 0.95 - behind * 0.05);
       else if (behind < 14) pace = 0.95 - behind * 0.01;
-      const speed = flow.speed + cruise * pace;
+      const speed = flow.speed * carried() + cruise * pace;
       s += speed * dt;
       // Across the river and in depth it goes loosely where the fish goes (a school turns
       // with its members), drawn toward the deep line, swaying a little; only its pace is

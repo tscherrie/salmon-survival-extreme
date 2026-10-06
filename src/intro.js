@@ -1,6 +1,6 @@
 // The first thing on screen: the title, a line about what the game is, the button that
 // starts the swim (which is also the click the browser needs before it plays sound or
-// captures the mouse), the settings -- the graphics, the language, vegan mode -- and the
+// captures the mouse), the settings -- the graphics, the language, relax mode -- and the
 // controls, small, at the bottom: the keys with a keyboard and a mouse, the touch controls
 // while those are in use (src/controls.js, src/touch.js). Paused mid-swim, the same card
 // comes back as the pause, with everything on it and a way to start a new game; its button
@@ -333,8 +333,9 @@ export function showIntro({ resume = null, title = true, quality = null, onResum
     }
   });
   if (resume) status.textContent = `Gespeichert: ${resume}`;
-  // Vegan mode (vegan.js): nobody is eaten; kept for next time. What it means is its row's
-  // tooltip (index.html), and the switch's own, so that a screen reader says it too.
+  // Relax mode (vegan.js): nobody is eaten, and the river is easier; kept for next time.
+  // What it means is its row's tooltip (index.html), and the switch's own, so that a screen
+  // reader says it too.
   const vegan = intro.querySelector("#intro-vegan");
   if (vegan) {
     vegan.title = vegan.closest("[title]")?.title ?? "";

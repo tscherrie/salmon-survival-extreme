@@ -48,7 +48,7 @@ import { createDrive } from "./drive.js";
 import { createBaitBall } from "./baitball.js";
 import { createScent } from "./scent.js";
 import { createRedd } from "./redd.js";
-import { mode } from "./vegan.js";
+import { carried, mode } from "./vegan.js";
 import { TRAITS, STEP, earned, heritage, inherit, loadHeritage, resetHeritage, traits as heritageTraits } from "./heritage.js";
 import { dither } from "./render/dither.js";
 import { mods } from "./mods.js";
@@ -970,7 +970,7 @@ async function start() {
     if (baitball.on && !ballShown) {
       ballShown = true;
       huntLabel.textContent = translate(baitball.ball.title);
-      // (vegan mode: a sight to see, nothing to catch -- no count)
+      // (relax mode: a sight to see, nothing to catch -- no count)
       huntBar.hidden = mode.vegan;
       track("ball", { outcome: "start", kind: baitball.ball.kind });
       hud.toast(`${baitball.ball.title}!`, mode.vegan ? "Basstölpel stoßen hinein." : "Basstölpel stoßen hinein – schnapp dir, so viele du kannst!", 6);
@@ -1475,38 +1475,183 @@ async function start() {
   }
 
   // ------------------------------------------------------------------------------------
-  // The resolution follows the machine: when frames run long for a couple of seconds the
-  // image is drawn a step smaller (and scaled up), and when there is time to spare it
-  // climbs back, never straight back to a size that was just too much.
-  const frameRate = { average: 1 / 60, slow: 0, fast: 0, scale: 1, ceiling: 1 };
-  function adaptResolution(seconds) {
-    if (!(seconds > 0 && seconds < 0.25)) return;
+  // The resolution follows the machine, judged against the rate it can actually reach: 60
+  // frames a second (a faster screen is no reason to draw less), or 30 where even the
+  // smallest size cannot hold 60 or drawing smaller brings no faster frames -- a slow
+  // processor, or a screen or browser that shows only 30 (a phone in low power mode, a
+  // laptop saving its battery), where shrinking the picture would only spoil it. What a
+  // frame takes is read as the mean of the last second without its longest sixth, so that
+  // a single long one (a shader being built) moves nothing while a mix of quick and slow
+  // frames still counts for what it is. When frames run long for two seconds the image is
+  // drawn a rung smaller (and scaled up), never below three quarters of the chosen
+  // quality's on a computer, so that the quality chosen still looks like itself (a phone,
+  // whose screen asks for far more pixels, may go to half); if the whole way down brings no
+  // faster frames, it goes back to where it started, and does not try that way again for a
+  // while. Once frames keep to the rate for a few seconds it climbs back a rung -- the rung
+  // it had to leave only after a while, and a rung that proves too much again waits longer
+  // each time before it is tried again.
+  const RUNGS = handheld ? [1, 0.88, 0.77, 0.68, 0.59, 0.5] : [1, 0.9, 0.82, 0.75];
+  const frameRate = {
+    // (The running average, for the ?fps box.)
+    average: 1 / 60,
+    rung: 0,
+    scale: 1,
+    goal: 1 / 60,
+    // The last second of frames: how long each took from one to the next.
+    intervals: [],
+    slow: 0,
+    held: 0,
+    quick: 0,
+    clock: 0,
+    // Seconds since the size last changed (only frames drawn at the size in use count).
+    since: 0,
+    // What frames took at this size over the last second (at least twenty frames), judged
+    // every quarter second for the last three, so that a way down is measured against the
+    // quickest of them rather than against a moment that a passing load (the first frames,
+    // still building shaders; terrain being laid out) made look slower than the size really
+    // is. (`took` itself reaches back sixty frames: three seconds at twenty a second.)
+    recent: [],
+    // A way down under way: the rung it started from and how long frames took there.
+    descent: null,
+    // When it last climbed, and how long each rung must wait before it is tried again.
+    climbed: -Infinity,
+    blocked: RUNGS.map(() => ({ until: 0, wait: 8 })),
+    // A way down that brought no faster frames: not set out on again before `until`, unless
+    // frames grow a good deal slower than `took` (then something else may be holding them
+    // up), and each time it proves useless again the wait is longer.
+    futile: { until: 0, took: 0, wait: 60 },
+    // The changes made, for looking into (?diagnostics: salmon.frameRate).
+    history: [],
+  };
+  const sorted = [];
+  const typical = (list) => {
+    sorted.length = 0;
+    for (const x of list) sorted.push(x);
+    sorted.sort((a, b) => a - b);
+    const n = Math.max(1, Math.floor(sorted.length * 0.85));
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += sorted[i];
+    return sum / n;
+  };
+  // (`ms`: at the end of a way down, what frames took before it and at the bottom.)
+  function note(why, ms = null) {
     const f = frameRate;
-    f.average += (seconds - f.average) * 0.06;
-    f.ceiling = Math.min(1, f.ceiling + seconds * 0.002);
-    if (f.average > 1 / 46) (f.slow += seconds), (f.fast = 0);
-    else if (f.average < 1 / 57) (f.fast += seconds), (f.slow = 0);
-    else f.slow = f.fast = 0;
-    if (f.slow > 1.5 && f.scale > 0.5) {
-      f.ceiling = f.scale * 0.96;
-      f.scale = Math.max(0.5, f.scale * 0.85);
+    f.history.push({ at: +(performance.now() / 1000).toFixed(1), scale: f.scale, goal: Math.round(1 / f.goal), why, ...(ms ? { ms } : {}) });
+    if (f.history.length > 50) f.history.shift();
+  }
+  function setRung(rung, why, ms = null) {
+    const f = frameRate;
+    f.rung = rung;
+    f.scale = RUNGS[rung];
+    f.since = f.slow = f.held = 0;
+    f.intervals.length = 0;
+    f.recent.length = 0;
+    note(why, ms);
+    resize();
+  }
+  function adaptResolution(seconds) {
+    // (A long gap is the tab coming back, or the debugger: nothing to judge.)
+    if (!(seconds > 0 && seconds < 0.5)) return;
+    const f = frameRate;
+    f.average += (Math.min(seconds, 0.25) - f.average) * 0.06;
+    f.intervals.push(seconds);
+    if (f.intervals.length > 60) f.intervals.shift();
+    f.since += seconds;
+    f.clock += seconds;
+    if (f.clock < 0.25) return;
+    const dt = f.clock;
+    f.clock = 0;
+    // A second's worth of frames at this size before anything is judged.
+    if (f.since < 1 || f.intervals.length < 30) return;
+    const now = performance.now() / 1000;
+    const took = typical(f.intervals);
+    let n = 0;
+    for (let i = f.intervals.length - 1, sum = 0; i >= 0 && (sum < 1 || n < 20); i--, n++) sum += f.intervals[i];
+    f.recent.push(n < f.intervals.length ? typical(f.intervals.slice(-n)) : took);
+    if (f.recent.length > 12) f.recent.shift();
+    // (A fifth over the rate: a frame missed now and then is no reason to draw less.)
+    const slow = took > f.goal * 1.2;
+    const bottom = RUNGS.length - 1;
+    // On the way down: keeping to the rate again ends it. Still too slow at the bottom rung,
+    // 60 cannot be held here, and 30 becomes the rate; and if the whole way down brought
+    // frames not even a tenth faster, the pixels were not what held them up -- back to where
+    // it started. (The bottom rung draws little more than half the pixels: where they are what
+    // a frame waits for, it is far quicker there, and a mere few per cent are the processor's
+    // or the measuring's ups and downs, no reason to spoil the picture.)
+    if (f.descent && f.since >= 1.5) {
+      if (!slow) {
+        f.descent = null;
+        // (The rung just left was too much a moment ago: not straight back up to it.)
+        const b = f.blocked[f.rung - 1];
+        if (b) b.until = now + b.wait;
+      } else if (f.rung === bottom) {
+        const { from, before } = f.descent;
+        f.descent = null;
+        f.goal = 1 / 30;
+        if (took > before * 0.9) {
+          const u = f.futile;
+          u.until = now + u.wait;
+          u.took = Math.max(took, before);
+          u.wait = Math.min(600, u.wait * 2);
+          setRung(from, "no gain", [+(before * 1000).toFixed(1), +(took * 1000).toFixed(1)]);
+        } else note("bottom", [+(before * 1000).toFixed(1), +(took * 1000).toFixed(1)]);
+        return;
+      }
+    }
+    f.slow = slow ? f.slow + dt : 0;
+    if (f.slow >= (f.descent ? 1 : 2)) {
       f.slow = 0;
-      f.average = 1 / 52;
-      resize();
-    } else if (f.fast > 6 && f.scale < f.ceiling - 0.01) {
-      f.scale = Math.min(f.ceiling, f.scale / 0.9);
-      f.fast = 0;
-      resize();
+      if (f.rung < bottom) {
+        if (!f.descent) {
+          // (Not straight down again the way that just brought nothing -- on a machine whose
+          // processor is what it waits for, that would shrink and restore the picture every
+          // few seconds.)
+          if (now < f.futile.until && took < f.futile.took * 1.25) return;
+          f.descent = { from: f.rung, before: Math.min(...f.recent) };
+        }
+        // Too slow within half a minute of a climb: that rung waits longer each time before
+        // another try, so that a size the machine only just manages is not swapped in and out.
+        if (now - f.climbed < 30) {
+          const b = f.blocked[f.rung];
+          b.until = now + b.wait;
+          b.wait = Math.min(240, b.wait * 2);
+        }
+        setRung(f.rung + 1, "slow");
+      } else if (f.goal < 1 / 30) {
+        f.goal = 1 / 30;
+        note("bottom");
+      }
+      return;
+    }
+    // Keeping to 60 again where 30 was settled for (lighter water, the battery charged).
+    f.quick = f.goal > 1 / 59 && took < (1 / 60) * 1.05 ? f.quick + dt : 0;
+    if (f.quick >= 3) {
+      f.quick = 0;
+      f.goal = 1 / 60;
+      // (Things have changed: a way down may be worth a try again.)
+      f.futile.until = 0;
+      note("60 again");
+    }
+    // Time to spare: frames keeping to the rate for a few seconds, a rung up.
+    const up = f.rung - 1;
+    f.held = !slow && !f.descent && up >= 0 && took <= f.goal * 1.05 && now >= f.blocked[up].until ? f.held + dt : 0;
+    if (f.held >= 3) {
+      f.climbed = now;
+      setRung(up, "held");
     }
   }
   const fpsBox = query.has("fps") ? Object.assign(document.createElement("div"), { id: "fps" }) : null;
   if (fpsBox) document.body.append(fpsBox);
 
+  // (How many pixels the chosen quality draws at its full size, for ?xslowpx.)
+  let fullPixels = 1;
   function resize() {
     const bounds = canvas.getBoundingClientRect();
     settings = gameSettings();
     const size = framebufferSize(bounds.width, bounds.height, settings.resolution * frameRate.scale, 8192, settings.maxPixels * frameRate.scale * frameRate.scale);
     if (!size) return;
+    const full = framebufferSize(bounds.width, bounds.height, settings.resolution, 8192, settings.maxPixels);
+    fullPixels = full.width * full.height;
     // With frames blended in time the picture goes to the screen at the screen's own
     // resolution (up to 4K), whatever the scene is drawn at: the blend fills in the rest.
     const screen = settings.taa ? framebufferSize(bounds.width, bounds.height, Math.min(devicePixelRatio || 1, 2), 8192, 8.3e6) : size;
@@ -1748,7 +1893,7 @@ async function start() {
   const threatAt = new THREE.Vector3();
   const warned = new WeakMap();
   function warnings() {
-    // (vegan mode: nobody is after it -- no warnings)
+    // (relax mode: nobody is after it -- no warnings)
     const list = dead > 0 || celebration.active || fish.safe || mode.vegan ? [] : life.hunters.threats(fish, threatList);
     if (list === threatList && redd.on) redd.threats(fish, list);
     list.sort((a, b) => b.level - a.level);
@@ -1997,7 +2142,7 @@ async function start() {
       fish.events.length = 0;
     }
     lastPlace.copy(fish.position);
-    // The gill nets in the estuary (in vegan mode they catch nothing).
+    // The gill nets in the estuary (in relax mode they catch nothing).
     if (dead <= 0 && !fish.safe) {
       const net = nets.update(dt, fish, mode.vegan);
       if (net === "caught") {
@@ -2036,7 +2181,7 @@ async function start() {
           }
           break;
         case "angler":
-          // (vegan mode: his fly is nothing to it)
+          // (relax mode: his fly is nothing to it)
           if (!mode.vegan) hud.tip("angler", "<b>Ein Angler am Ufer!</b> Seine Fliege treibt verlockend über das Wasser – aber an ihr hängt eine feine Schnur. Beißt du zu, hängst du am Haken.", 10);
           break;
         case "hooked":
@@ -2280,7 +2425,7 @@ async function start() {
     for (let i = 0; i < (outcome.missed ?? 0); i++) if (dead <= 0) brood.escaped();
     // A strike that missed: heard snapping shut on nothing.
     for (const w of outcome.whiffs ?? []) if (dead <= 0 && !fish.captive) sound.whiff(w.key, w.kind);
-    // (vegan mode: nobody dies of anything)
+    // (relax mode: nobody dies of anything)
     if (outcome.killed && dead <= 0 && !mode.vegan) die(outcome.killed);
     else if (fish.energy <= 0 && dead <= 0 && time - lastCombat < 6 && !mode.vegan) die("Im Kampf unterlegen");
     // Too long without food: first a warning, then the body wastes, and with no strength
@@ -2310,8 +2455,10 @@ async function start() {
     if (eggs.count && !["alevin", "fry"].includes(phaseOf(fish.stage))) eggs.count = 0;
     // Tips, each once, when they matter.
     const st = STAGES[fish.stage];
-    if (mode.vegan && time > 6 && !hud.seen("vegan"))
-      hud.tip("vegan", "<b>Vegan-Modus.</b> Keiner jagt dich, und du jagst keinen: Was im Wasser treibt, sind andere Lebewesen, die ihr eigenes Leben führen. Hunger hast du nicht – du wächst mit der Zeit und mit jedem Stück Weg: flussab, solange du jung bist, im Meer überall, und zum Schluss heim zur Quelle.", 12);
+    // (Relax mode's tip has a kind of its own, not the old "vegan": whoever saw that one has
+    // not yet been told about the easing.)
+    if (mode.vegan && time > 6 && !hud.seen("relax"))
+      hud.tip("relax", "<b>Relax-Modus.</b> Keiner jagt dich, und du jagst keinen: Was im Wasser treibt, sind andere Lebewesen, die ihr eigenes Leben führen. Hunger hast du nicht – du wächst mit der Zeit und mit jedem Stück Weg: flussab, solange du jung bist, im Meer überall, und zum Schluss heim zur Quelle. Schwimmen kostet dich nur halb so viel Kraft, die Strömung trägt dich weniger fort, und ganz erschöpft erholst du dich in ruhigem Wasser schneller.", 15);
     else if (windedOnce && fish.winded)
       hud.tip("winded", "<b>Außer Atem!</b> Jeder Spurt, jedes Schnappen und jeder Sprung mit <kbd>Leertaste</kbd> kostet <b>Kraft</b>. Lass dich treiben (<kbd>W</kbd> loslassen) oder halte dich am Grund fest – dann füllt sich der helle Teil wieder, bis zur Kraft aus dem Futter (gestreift).", 10);
     else if (!st.fasting && !st.sea && fish.dart && !mode.vegan)
@@ -2328,10 +2475,16 @@ async function start() {
           : "Gefressenes landet im <b>Magen</b> und wird nach und nach zu <b>Wachstum</b>. Ist der Wachstumsbalken voll, wirst du zum nächsten Stadium.",
         9,
       );
-    else if (st.phase === "fry" && fish.flow.speed > salmon.speeds().cruise && !fish.gripping)
+    // Early in the river, in either mode: where the current is weaker. A beginner who fights it
+    // in the open spends what little strength there is and drifts off spent; the slack water
+    // behind the stones and near the bed is the whole trick of living in a brook.
+    else if (!hud.seen("current") && (st.phase === "fry" || st.phase === "parr") && time > 12 && !fish.gripping && (fish.shelter ?? 0) < 0.3 && fish.flow.speed > 0.6 * salmon.speeds().cruise && regionWeights(fish.river.s).sea < 0.5)
+      hud.tip("current", "<b>Die Strömung</b> ist hinter Steinen und dicht am Grund schwächer. Dort kostet dich das Schwimmen weniger Kraft, und du kannst dich ausruhen.", 10);
+    // (Stronger as it carries the fish: in relax mode only part of it does.)
+    else if (st.phase === "fry" && fish.flow.speed * carried() > salmon.speeds().cruise && !fish.gripping)
       hud.tip("grip", "Die Strömung ist stärker als du: tauch zum Grund und halte <kbd>S</kbd>, dann krallst du dich an den Steinen fest.");
     else if (fish.energy < 0.3 && !st.fasting && !st.yolk && mode.vegan)
-      hud.tip("tiredVegan", "Deine <b>Kraft</b> geht zur Neige. Ruh dich hinter einem Stein oder am Grund (<kbd>S</kbd>) aus – dann kommt sie wieder.");
+      hud.tip("tiredVegan", "Deine <b>Kraft</b> geht zur Neige. Ruh dich hinter einem Stein oder am Grund (<kbd>S</kbd>) aus – dort kommt sie schnell wieder.");
     else if (fish.energy < 0.3 && !st.fasting && !st.yolk)
       hud.tip("tired", "Deine <b>Kraft</b> geht zur Neige. Friss etwas, oder ruh dich hinter einem Stein oder am Grund (<kbd>S</kbd>) aus.");
     else if (st.id === "smolt" && regionWeights(fish.river.s).sea < 0.5 && fish.progress > 0.1)
@@ -2385,7 +2538,7 @@ async function start() {
   }
 
   function stageLine(st) {
-    // Vegan mode: no eating, no hunting -- the way itself.
+    // Relax mode: no eating, no hunting -- the way itself.
     if (mode.vegan) {
       const line = {
         fry: "Der Dotter ist aufgebraucht. Von jetzt an wächst du mit der Zeit – und mit jedem Stück Weg flussab.",
@@ -3106,12 +3259,29 @@ async function start() {
         }
       } catch {}
     });
+  // (Development, for trying adaptResolution out: ?xslow=ms holds every frame up by that
+  // long, as a slow processor would; ?xslowpx=ms by that long times the share of the full
+  // picture being drawn, as a graphics card short of pixels would; ?xhitch=s,ms,n holds n
+  // frames up by ms each once the page is s seconds old, as building shaders does.)
+  const slowFixed = Number(query.get("xslow")) || 0;
+  const slowPixels = Number(query.get("xslowpx")) || 0;
+  const hitch = (query.get("xhitch") || "").split(",").map(Number);
+  let hitches = hitch[0] > 0 ? hitch[2] || 1 : 0;
+  function holdUp(began) {
+    let ms = slowFixed + slowPixels * ((post.main.width * post.main.height) / Math.max(1, fullPixels));
+    if (hitches > 0 && began / 1000 > hitch[0]) {
+      hitches--;
+      ms += hitch[1] || 200;
+    }
+    while (performance.now() - began < ms);
+  }
   function tick(now) {
     if (!running) return;
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     adaptResolution((now - last) / 1000);
-    if (fpsBox && frames % 15 === 0) fpsBox.textContent = `${Math.round(1 / frameRate.average)} fps · ${post.main.width}×${post.main.height} → ${renderer.domElement.width}×${renderer.domElement.height}`;
+    if (fpsBox && frames % 15 === 0) fpsBox.textContent = `${Math.round(1 / frameRate.average)} fps · ${Math.round(frameRate.scale * 100)} % (${Math.round(1 / frameRate.goal)}) · ${post.main.width}×${post.main.height} → ${renderer.domElement.width}×${renderer.domElement.height}`;
     last = now;
+    if (slowFixed || slowPixels || hitches) holdUp(performance.now());
     advance(dt);
     frameId = requestAnimationFrame(tick);
   }
@@ -3137,6 +3307,7 @@ async function start() {
   if (query.get("capture") || query.get("diagnostics") === "1" || query.has("shots"))
     window.salmon = {
       profile: prof,
+      frameRate,
       fish,
       salmon,
       terrain,
