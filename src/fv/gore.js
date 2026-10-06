@@ -1619,7 +1619,9 @@ export function createGore(scene, camera, { light = false, glow = null } = {}) {
         morsels.positions[o] = gx[i];
         morsels.positions[o + 1] = gy[i];
         morsels.positions[o + 2] = gz[i];
-        morsels.sizes[halos] = Math.max(6.4 * gScale[i * 3], 0.12) * shrink * near * (1 + 0.22 * Math.sin(clock * 5 + i * 1.7));
+        // (Sized as life.js sizes a morsel's, by the chunk; but a big fish's big chunk keeps
+        // a halo no bigger than the largest morsel's, not a glowing ball round it.)
+        morsels.sizes[halos] = clamp(6.4 * gScale[i * 3], 0.12, 1.6) * shrink * near * (1 + 0.22 * Math.sin(clock * 5 + i * 1.7));
         morsels.colors[o] = 1.05;
         morsels.colors[o + 1] = 0.75;
         morsels.colors[o + 2] = 0.36;

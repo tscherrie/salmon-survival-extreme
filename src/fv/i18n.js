@@ -142,11 +142,11 @@ const WORDS = [
   ["Ein Schwarmfisch ist gefallen", "A fish of your school has fallen", "一条鱼群伙伴倒下了", "群れの仲間が一匹倒れた", "Риба от пасажа ти падна"],
   // What a fight leaves is food (remains.js).
   [
-    "<b>Kampf nährt.</b> Was du versenkst, lässt Fressbares zurück: Stücke, die mit der Strömung treiben, und tote Fische zum Anbeißen. Schwimm hin und friss – das gibt dir Kraft.",
-    "<b>Fighting feeds.</b> What you sink leaves something to eat: pieces drifting with the current, and dead fish to bite into. Swim over and eat – it gives you strength.",
-    "<b>战斗也能填饱肚子。</b>被你击沉的敌人会留下能吃的东西：随水流漂走的碎块，还有可以啃咬的死鱼。游过去吃掉——能让你恢复力气。",
-    "<b>戦えば腹も満ちる。</b>撃沈した敵は食べられるものを残す。流れに漂う肉片や、かじりつける死んだ魚だ。泳いでいって食べれば、力が戻る。",
-    "<b>Битката храни.</b> Това, което потопиш, оставя храна: парчета, които течението носи, и мъртви риби, в които да забиеш зъби. Плувай натам и яж – това ти дава сила.",
+    "<b>Kampf nährt.</b> Was du versenkst, lässt Fressbares zurück: Stücke, die mit der Strömung treiben, und tote Gegner zum Anbeißen. Schwimm hin und friss – das gibt dir Kraft.",
+    "<b>Fighting feeds.</b> What you sink leaves something to eat: pieces drifting with the current, and dead enemies to bite into. Swim over and eat – it gives you strength.",
+    "<b>战斗也能填饱肚子。</b>被你击沉的敌人会留下能吃的东西：随水流漂走的碎块，还有可以啃咬的敌人尸体。游过去吃掉——能让你恢复力气。",
+    "<b>戦えば腹も満ちる。</b>撃沈した敵は食べられるものを残す。流れに漂う肉片や、かじりつける敵の死骸だ。泳いでいって食べれば、力が戻る。",
+    "<b>Битката храни.</b> Това, което потопиш, оставя храна: парчета, които течението носи, и мъртви врагове, в които да забиеш зъби. Плувай натам и яж – това ти дава сила.",
   ],
 ];
 

@@ -716,7 +716,7 @@ export function createCombat(game) {
     // fighting feeds. (Tried again while the tip line is busy, for a while.)
     if (remainsTip !== null && clock - remainsTip > 1.2) {
       if (clock - remainsTip > 15 || game.hud.seen?.("fv-remains")) remainsTip = null;
-      else if (remains.hungry(local) && game.hud.tip("fv-remains", "<b>Kampf nährt.</b> Was du versenkst, lässt Fressbares zurück: Stücke, die mit der Strömung treiben, und tote Fische zum Anbeißen. Schwimm hin und friss – das gibt dir Kraft.", 11)) remainsTip = null;
+      else if (remains.hungry(local) && game.hud.tip("fv-remains", "<b>Kampf nährt.</b> Was du versenkst, lässt Fressbares zurück: Stücke, die mit der Strömung treiben, und tote Gegner zum Anbeißen. Schwimm hin und friss – das gibt dir Kraft.", 11)) remainsTip = null;
     }
     safety.step(dt, local);
     rules.after(local);
