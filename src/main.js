@@ -1486,9 +1486,10 @@ async function start() {
   // drawn a rung smaller (and scaled up), never below three quarters of the chosen
   // quality's on a computer, so that the quality chosen still looks like itself (a phone,
   // whose screen asks for far more pixels, may go to half); if the whole way down brings no
-  // faster frames, it goes back to where it started. Once frames keep to the rate for a few
-  // seconds it climbs back a rung -- the rung it had to leave only after a while, and a
-  // rung that proves too much again waits longer each time before it is tried again.
+  // faster frames, it goes back to where it started, and does not try that way again for a
+  // while. Once frames keep to the rate for a few seconds it climbs back a rung -- the rung
+  // it had to leave only after a while, and a rung that proves too much again waits longer
+  // each time before it is tried again.
   const RUNGS = handheld ? [1, 0.88, 0.77, 0.68, 0.59, 0.5] : [1, 0.9, 0.82, 0.75];
   const frameRate = {
     // (The running average, for the ?fps box.)
@@ -1504,11 +1505,21 @@ async function start() {
     clock: 0,
     // Seconds since the size last changed (only frames drawn at the size in use count).
     since: 0,
+    // What frames took at this size over the last second (at least twenty frames), judged
+    // every quarter second for the last three, so that a way down is measured against the
+    // quickest of them rather than against a moment that a passing load (the first frames,
+    // still building shaders; terrain being laid out) made look slower than the size really
+    // is. (`took` itself reaches back sixty frames: three seconds at twenty a second.)
+    recent: [],
     // A way down under way: the rung it started from and how long frames took there.
     descent: null,
     // When it last climbed, and how long each rung must wait before it is tried again.
     climbed: -Infinity,
     blocked: RUNGS.map(() => ({ until: 0, wait: 8 })),
+    // A way down that brought no faster frames: not set out on again before `until`, unless
+    // frames grow a good deal slower than `took` (then something else may be holding them
+    // up), and each time it proves useless again the wait is longer.
+    futile: { until: 0, took: 0, wait: 60 },
     // The changes made, for looking into (?diagnostics: salmon.frameRate).
     history: [],
   };
@@ -1522,18 +1533,20 @@ async function start() {
     for (let i = 0; i < n; i++) sum += sorted[i];
     return sum / n;
   };
-  function note(why) {
+  // (`ms`: at the end of a way down, what frames took before it and at the bottom.)
+  function note(why, ms = null) {
     const f = frameRate;
-    f.history.push({ at: +(performance.now() / 1000).toFixed(1), scale: f.scale, goal: Math.round(1 / f.goal), why });
+    f.history.push({ at: +(performance.now() / 1000).toFixed(1), scale: f.scale, goal: Math.round(1 / f.goal), why, ...(ms ? { ms } : {}) });
     if (f.history.length > 50) f.history.shift();
   }
-  function setRung(rung, why) {
+  function setRung(rung, why, ms = null) {
     const f = frameRate;
     f.rung = rung;
     f.scale = RUNGS[rung];
     f.since = f.slow = f.held = 0;
     f.intervals.length = 0;
-    note(why);
+    f.recent.length = 0;
+    note(why, ms);
     resize();
   }
   function adaptResolution(seconds) {
@@ -1552,12 +1565,19 @@ async function start() {
     if (f.since < 1 || f.intervals.length < 30) return;
     const now = performance.now() / 1000;
     const took = typical(f.intervals);
+    let n = 0;
+    for (let i = f.intervals.length - 1, sum = 0; i >= 0 && (sum < 1 || n < 20); i--, n++) sum += f.intervals[i];
+    f.recent.push(n < f.intervals.length ? typical(f.intervals.slice(-n)) : took);
+    if (f.recent.length > 12) f.recent.shift();
     // (A fifth over the rate: a frame missed now and then is no reason to draw less.)
     const slow = took > f.goal * 1.2;
     const bottom = RUNGS.length - 1;
     // On the way down: keeping to the rate again ends it. Still too slow at the bottom rung,
-    // 60 cannot be held here, and 30 becomes the rate; and if the whole way down brought no
-    // faster frames, the pixels were not what held them up -- back to where it started.
+    // 60 cannot be held here, and 30 becomes the rate; and if the whole way down brought
+    // frames not even a tenth faster, the pixels were not what held them up -- back to where
+    // it started. (The bottom rung draws little more than half the pixels: where they are what
+    // a frame waits for, it is far quicker there, and a mere few per cent are the processor's
+    // or the measuring's ups and downs, no reason to spoil the picture.)
     if (f.descent && f.since >= 1.5) {
       if (!slow) {
         f.descent = null;
@@ -1568,8 +1588,13 @@ async function start() {
         const { from, before } = f.descent;
         f.descent = null;
         f.goal = 1 / 30;
-        if (took > before * 0.95) setRung(from, "no gain");
-        else note("bottom");
+        if (took > before * 0.9) {
+          const u = f.futile;
+          u.until = now + u.wait;
+          u.took = Math.max(took, before);
+          u.wait = Math.min(600, u.wait * 2);
+          setRung(from, "no gain", [+(before * 1000).toFixed(1), +(took * 1000).toFixed(1)]);
+        } else note("bottom", [+(before * 1000).toFixed(1), +(took * 1000).toFixed(1)]);
         return;
       }
     }
@@ -1577,7 +1602,13 @@ async function start() {
     if (f.slow >= (f.descent ? 1 : 2)) {
       f.slow = 0;
       if (f.rung < bottom) {
-        if (!f.descent) f.descent = { from: f.rung, before: took };
+        if (!f.descent) {
+          // (Not straight down again the way that just brought nothing -- on a machine whose
+          // processor is what it waits for, that would shrink and restore the picture every
+          // few seconds.)
+          if (now < f.futile.until && took < f.futile.took * 1.25) return;
+          f.descent = { from: f.rung, before: Math.min(...f.recent) };
+        }
         // Too slow within half a minute of a climb: that rung waits longer each time before
         // another try, so that a size the machine only just manages is not swapped in and out.
         if (now - f.climbed < 30) {
@@ -1597,6 +1628,8 @@ async function start() {
     if (f.quick >= 3) {
       f.quick = 0;
       f.goal = 1 / 60;
+      // (Things have changed: a way down may be worth a try again.)
+      f.futile.until = 0;
       note("60 again");
     }
     // Time to spare: frames keeping to the rate for a few seconds, a rung up.
