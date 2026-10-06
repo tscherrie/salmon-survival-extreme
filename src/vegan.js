@@ -32,12 +32,16 @@ function read() {
   }
 }
 
-export const mode = { vegan: read() };
+// `eased`: the kinder river of relax mode on its own, without the rest of it -- for a fork
+// that keeps its hunters and its hunger but spares a beginner the current (Salmon Survival
+// Extreme's Tourist level sets it). Relax mode always has it.
+export const mode = { vegan: read(), eased: false };
+export const easy = () => mode.vegan || mode.eased;
 
 // How hard the current carries the salmon off (salmon.js), and so whatever must keep pace
 // with it -- the school on the run past the goosanders (drive.js), which would leave a
 // relaxed fish behind if it went with the whole current.
-export const carried = () => (mode.vegan ? RELAX.carry : 1);
+export const carried = () => (easy() ? RELAX.carry : 1);
 
 export function setVegan(on) {
   mode.vegan = !!on;

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { COATS, MODEL_LENGTH, blendCoat, coatUniforms, createFishMesh } from "./anatomy.js";
 import { FALLS, S, bed, current, frame, level, locate, section } from "./course.js";
 import { bonus, less } from "./heritage.js";
-import { RELAX, carried, mode } from "./vegan.js";
+import { RELAX, carried, easy, mode } from "./vegan.js";
 
 // Relax mode (vegan.js): how far a fish of each stage swims -- down the river while young,
 // any way at sea -- to grow into the next (it grows with time as well, half as fast).
@@ -516,9 +516,9 @@ export function createSalmon(scene, { pace = 1 } = {}) {
     // The upkeep of the body falls with size much as metabolic rate does; the cost of
     // swimming a little less steeply.
     const m = metabolism(L);
-    // (Relax mode: the swimming, and the holding against the current, at half the cost; the
-    // body's upkeep is the same.)
-    const effort = mode.vegan ? RELAX.effort : 1;
+    // (Relax mode, or its easing alone: the swimming, and the holding against the current, at
+    // half the cost; the body's upkeep is the same.)
+    const effort = easy() ? RELAX.effort : 1;
     let spend = 0.0008 * m + (0.0017 * q * q + 0.0006 * intoCurrent * q) * Math.sqrt(m) * effort;
     if (st.yolk) spend = 0.0006 + 0.003 * q * q * effort;
     if (st.fasting) {
@@ -546,9 +546,10 @@ export function createSalmon(scene, { pace = 1 } = {}) {
     // Relax mode's safety net: with no food to eat, a fish nearly out of strength gets it back
     // faster where the water hardly carries it -- behind a stone, pressed to the bottom, in a
     // still pool -- so that a tired beginner is never left drifting spent for long, and
-    // resting where the tips say pays off.
+    // resting where the tips say pays off. (With the easing alone it is there only for the
+    // spawner, which eats nothing either: a feeding fish's net is the food.)
     const calm = q < 0.4 && f.flow.speed * carry < 0.5 * sp.cruise;
-    const mend = mode.vegan && calm && f.energy < RELAX.low ? RELAX.mend : 1;
+    const mend = easy() && calm && f.energy < RELAX.low ? RELAX.mend : 1;
     if (st.yolk) {
       // The yolk feeds it, and it grows while it keeps still in the gravel.
       f.energy = Math.min(1, f.energy + 0.0045 * dt);

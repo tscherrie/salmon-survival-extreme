@@ -29,6 +29,7 @@ import { createCombatHud } from "./hud.js";
 import { ARSENAL, createPickups } from "./pickups.js";
 import { createProjectiles, createRibbons, createSmoke } from "./projectiles.js";
 import { createRules } from "./rules.js";
+import { createSafetyNet } from "./safety.js";
 import { createArmedSchool } from "./school.js";
 import { createSfx } from "./sfx.js";
 import { createSignals } from "./signals.js";
@@ -81,6 +82,8 @@ export function createCombat(game) {
   };
   const hud = createCombatHud(habitat, { weapons: WEAPONS });
   const difficulty = createDifficulty();
+  // Tourist's safety net: food drifting near a fish that is nearly spent (safety.js).
+  const safety = createSafetyNet({ life, difficulty });
   const director = createDirector({ random });
   const gravel = createGravel({ random, hud: game.hud });
   const ground = createGround({ terrain, pebbles: game.pebbles });
@@ -681,6 +684,7 @@ export function createCombat(game) {
     // The enemies' charges that are due.
     detonations(dt);
     eatCorpses(local);
+    safety.step(dt, local);
     rules.after(local);
     fx.update(dt);
     ordnance.update(dt, projectiles.live);
@@ -832,6 +836,7 @@ export function createCombat(game) {
     sfx,
     fx,
     difficulty,
+    safety,
     canFire,
     trigger,
   };

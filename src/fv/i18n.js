@@ -56,9 +56,17 @@ const WORDS = [
   ["Tourist", "Tourist", "游客", "ツーリスト", "Турист"],
   ["Normal", "Normal", "普通", "ノーマル", "Нормално"],
   ["Serious", "Serious", "严肃", "シリアス", "Сериозно"],
-  ["Die Gegner treffen kaum, verschluckt wirst du nicht.", "Enemies hardly ever hit you, and nothing swallows you whole.", "敌人几乎打不中你，你也不会被整条吞下。", "敵の攻撃はほとんど当たらず、丸呑みにもされない。", "Враговете почти не те улучват и никой не те поглъща цяла."],
+  [
+    "Die Gegner treffen kaum, verschluckt wirst du nicht. Schwimmen kostet weniger Kraft, die Strömung reißt dich nicht so leicht mit, und wird deine Kraft knapp, treibt dir mehr Futter zu.",
+    "Enemies hardly ever hit you, and nothing swallows you whole. Swimming costs less strength, the current does not sweep you away so easily, and when your strength runs low, more food drifts your way.",
+    "敌人几乎打不中你，你也不会被整条吞下。游泳更省力，水流也不那么容易把你冲走；力气快用完时，会有更多食物漂到你身边。",
+    "敵の攻撃はほとんど当たらず、丸呑みにもされない。泳ぐのに使う力が少なく、流れにも流されにくい。力が尽きかけると、エサが多く流れてくる。",
+    "Враговете почти не те улучват и никой не те поглъща цяла. Плуването струва по-малко сила, течението не те отнася толкова лесно, а когато силата ти свършва, към теб се носи повече храна.",
+  ],
   ["So, wie es gedacht ist.", "The way it is meant to be.", "游戏本来的样子。", "本来の想定どおり。", "Така, както е замислено."],
   ["Mehr Gegner, die härter zuschlagen und mehr aushalten.", "More enemies, who hit harder and take more to sink.", "更多敌人，下手更狠，也更耐打。", "敵が増え、攻撃はより激しく、よりしぶとい。", "Повече врагове, които удрят по-силно и издържат повече."],
+  // (Under the levels on a first visit.)
+  ["Zum Einstieg Tourist – Normal ist das Spiel, wie gedacht.", "Tourist to begin with – Normal is the game as intended.", "先从游客开始——普通才是游戏本来的样子。", "まずはツーリストで。ノーマルが本来のゲームだ。", "За начало – Турист. „Нормално“ е играта, както е замислена."],
   // (In a co-op room, where a reload starts the fish afresh.)
   ["Ein Wechsel lädt das Spiel neu.", "Switching reloads the game.", "切换会重新加载游戏。", "切り替えるとゲームを読み込み直します。", "Смяната презарежда играта."],
   // The weapon cards' places, on a phone.

@@ -2,9 +2,10 @@
 // style.css, intro.js) and leaves room for an extension: a place under the start and rows
 // among the settings. Extreme puts the co-op in that place (the offer to open a room, or the
 // room) and the difficulty first among the settings; it adds the shooting to the keys and
-// takes the vegan switch out, as there is no vegan mode here (wild.js). In a co-op room the
-// card changes a little: no line about the game, the lobby where the start would be, and in
-// the pause neither the saved stage nor "new game", as a game swum together is never saved.
+// takes the relax switch out (still #intro-vegan), as there is no relax mode here (wild.js).
+// In a co-op room the card changes a little: no line about the game, the lobby where the
+// start would be, and in the pause neither the saved stage nor "new game", as a game swum
+// together is never saved.
 //
 // All of it is done as this module is read (layOutCard, called by extreme.js), before the
 // game puts the card up, so that the card goes up as it is meant to look. Only the graphics
@@ -14,7 +15,7 @@ import "./i18n.js";
 import { t } from "../i18n.js";
 import { settingsRow } from "../intro.js";
 import { coopPanel } from "./coop.js";
-import { difficultyRow } from "./difficulty.js";
+import { difficultyRow, firstLine } from "./difficulty.js";
 
 const CSS = `
 /* In a room: no line about the game, and no saved stage or "new game" under the start. In
@@ -34,6 +35,10 @@ const CSS = `
 @media (max-height: 500px) {
   .handheld #intro:not(.fv-in-room) .extension { margin-top: 6px; }
 }
+/* On a first visit, under the levels: Tourist to begin with (difficulty.js). It stands in the
+   column of the buttons, or under them where the settings are one column. */
+#intro .settings .fv-first { grid-column: -2 / -1; margin: -3px 0 0; font-size: 11.5px; line-height: 1.35; opacity: 0.7; text-align: left; }
+.handheld #intro .settings .fv-first { margin-top: -2px; font-size: 10.5px; }
 `;
 
 // Adds Extreme's parts to the card; once, as the page loads (see above).
@@ -51,9 +56,11 @@ export function layOutCard() {
   const coop = coopPanel();
   if (coop) intro.querySelector("#intro-extension")?.append(coop);
 
-  // The difficulty, the first of the settings, a row of buttons like the ones below it; and
-  // no vegan switch.
-  settingsRow("Schwierigkeit", difficultyRow(), { first: true });
+  // The difficulty, the first of the settings, a row of buttons like the ones below it (on a
+  // first visit with a line under it); and no relax switch.
+  const levels = settingsRow("Schwierigkeit", difficultyRow(), { first: true });
+  const line = firstLine();
+  if (levels && line) levels.append(line);
   intro.querySelector("#intro-vegan")?.closest(".row")?.remove();
 
   // The shooting among the keys, after the dodge (in as few words as the mouse's entry, so
