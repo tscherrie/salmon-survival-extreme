@@ -56,9 +56,17 @@ const WORDS = [
   ["Tourist", "Tourist", "游客", "ツーリスト", "Турист"],
   ["Normal", "Normal", "普通", "ノーマル", "Нормално"],
   ["Serious", "Serious", "严肃", "シリアス", "Сериозно"],
-  ["Die Gegner treffen kaum, verschluckt wirst du nicht.", "Enemies hardly ever hit you, and nothing swallows you whole.", "敌人几乎打不中你，你也不会被整条吞下。", "敵の攻撃はほとんど当たらず、丸呑みにもされない。", "Враговете почти не те улучват и никой не те поглъща цяла."],
+  [
+    "Die Gegner treffen kaum, verschluckt wirst du nicht. Schwimmen kostet weniger Kraft, die Strömung reißt dich nicht so leicht mit, und wird deine Kraft knapp, treibt dir mehr Futter zu.",
+    "Enemies hardly ever hit you, and nothing swallows you whole. Swimming costs less strength, the current does not sweep you away so easily, and when your strength runs low, more food drifts your way.",
+    "敌人几乎打不中你，你也不会被整条吞下。游泳更省力，水流也不那么容易把你冲走；力气快用完时，会有更多食物漂到你身边。",
+    "敵の攻撃はほとんど当たらず、丸呑みにもされない。泳ぐのに使う力が少なく、流れにも流されにくい。力が尽きかけると、エサが多く流れてくる。",
+    "Враговете почти не те улучват и никой не те поглъща цяла. Плуването струва по-малко сила, течението не те отнася толкова лесно, а когато силата ти свършва, към теб се носи повече храна.",
+  ],
   ["So, wie es gedacht ist.", "The way it is meant to be.", "游戏本来的样子。", "本来の想定どおり。", "Така, както е замислено."],
   ["Mehr Gegner, die härter zuschlagen und mehr aushalten.", "More enemies, who hit harder and take more to sink.", "更多敌人，下手更狠，也更耐打。", "敵が増え、攻撃はより激しく、よりしぶとい。", "Повече врагове, които удрят по-силно и издържат повече."],
+  // (Under the levels on a first visit.)
+  ["Zum Einstieg Tourist – Normal ist das Spiel, wie gedacht.", "Tourist to begin with – Normal is the game as intended.", "先从游客开始——普通才是游戏本来的样子。", "まずはツーリストで。ノーマルが本来のゲームだ。", "За начало – Турист. „Нормално“ е играта, както е замислена."],
   // (In a co-op room, where a reload starts the fish afresh.)
   ["Ein Wechsel lädt das Spiel neu.", "Switching reloads the game.", "切换会重新加载游戏。", "切り替えるとゲームを読み込み直します。", "Смяната презарежда играта."],
   // The weapon cards' places, on a phone.
@@ -132,6 +140,14 @@ const WORDS = [
     "<b>Пасажът ти се бие с теб.</b> Всяка риба от пасажа ти вече носи оръжие и стреля по всичко, което напада теб или нея – първо по онези, които тъкмо се хвърлят. Затова идват повече врагове. Паднала риба от пасажа не се връща.",
   ],
   ["Ein Schwarmfisch ist gefallen", "A fish of your school has fallen", "一条鱼群伙伴倒下了", "群れの仲間が一匹倒れた", "Риба от пасажа ти падна"],
+  // What a fight leaves is food (remains.js).
+  [
+    "<b>Kampf nährt.</b> Was du versenkst, lässt Fressbares zurück: Stücke, die mit der Strömung treiben, und tote Gegner zum Anbeißen. Schwimm hin und friss – das gibt dir Kraft.",
+    "<b>Fighting feeds.</b> What you sink leaves something to eat: pieces drifting with the current, and dead enemies to bite into. Swim over and eat – it gives you strength.",
+    "<b>战斗也能填饱肚子。</b>被你击沉的敌人会留下能吃的东西：随水流漂走的碎块，还有可以啃咬的敌人尸体。游过去吃掉——能让你恢复力气。",
+    "<b>戦えば腹も満ちる。</b>撃沈した敵は食べられるものを残す。流れに漂う肉片や、かじりつける敵の死骸だ。泳いでいって食べれば、力が戻る。",
+    "<b>Битката храни.</b> Това, което потопиш, оставя храна: парчета, които течението носи, и мъртви врагове, в които да забиеш зъби. Плувай натам и яж – това ти дава сила.",
+  ],
 ];
 
 for (const [de, en, zh, ja, bg] of WORDS) {

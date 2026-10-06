@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { COATS, MODEL_LENGTH, blendCoat, coatUniforms, createFishMesh } from "./anatomy.js";
 import { FALLS, S, bed, current, frame, level, locate, section } from "./course.js";
 import { bonus, less } from "./heritage.js";
-import { mode } from "./vegan.js";
+import { RELAX, carried, easy, mode } from "./vegan.js";
 
-// Vegan mode (vegan.js): how far a fish of each stage swims -- down the river while young,
+// Relax mode (vegan.js): how far a fish of each stage swims -- down the river while young,
 // any way at sea -- to grow into the next (it grows with time as well, half as fast).
 const VEGAN_WAY = { fry: 350, fingerling: 450, yearling: 700, parr: 900, smolt: 5000, postsmolt: 1500, grilse: 2000, sea: 3000 };
 
@@ -339,6 +339,12 @@ export function createSalmon(scene, { pace = 1 } = {}) {
       f.flow.speed *= k;
     }
 
+    // How hard the current carries the fish off: all of it, but in relax mode (vegan.js) only
+    // part, for a beginner who cannot yet read the water to find the slack behind the stones.
+    // `f.flow` stays the water as it runs at the fish, for what it sounds like and how it
+    // drifts the scent.
+    const carry = carried();
+
     // ---- Airborne: a leap, or a fall over a lip.
     if (f.airborne) {
       f.velocity.y -= GRAVITY * dt;
@@ -356,7 +362,7 @@ export function createSalmon(scene, { pace = 1 } = {}) {
         f.airborne = false;
         f.roll = 0;
         current(f.river.s, f.river.u, f.position.y, f.flow, world.time);
-        f.relative.set(f.velocity.x - f.flow.vx, f.velocity.y * 0.3, f.velocity.z - f.flow.vz);
+        f.relative.set(f.velocity.x - f.flow.vx * carry, f.velocity.y * 0.3, f.velocity.z - f.flow.vz * carry);
         f.events.push({ type: "splash", x: f.position.x, y: lv, z: f.position.z, strength: Math.min(1.6, 0.4 + L * 0.12 + Math.abs(f.velocity.y) * 0.01) });
         if (f.leapTarget) {
           f.events.push({ type: f.river.s < f.leapTarget.s - 0.5 ? "leapDone" : "leapFailed", fall: f.leapTarget });
@@ -462,10 +468,11 @@ export function createSalmon(scene, { pace = 1 } = {}) {
     target.set(0, 0, 0);
     if (input.forward) target.copy(f.heading).multiplyScalar(sp.cruise * cap);
     if (input.brake) {
-      // Hold the ground: cancel the current as far as the fins allow.
-      const along = clamp(-(f.flow.vx * f.heading.x + f.flow.vz * f.heading.z), -0.5 * sp.cruise, sp.sprint * 0.8);
+      // Hold the ground: cancel the current as far as the fins allow (only as much of it as
+      // carries the fish, so that relax mode's lighter push takes less holding too).
+      const along = clamp(-(f.flow.vx * f.heading.x + f.flow.vz * f.heading.z) * carry, -0.5 * sp.cruise, sp.sprint * 0.8);
       target.copy(f.heading).multiplyScalar(along * cap);
-      const across = -(f.flow.vx * side.x + f.flow.vz * side.z);
+      const across = -(f.flow.vx * side.x + f.flow.vz * side.z) * carry;
       target.addScaledVector(side, clamp(across, -0.6 * sp.cruise, 0.6 * sp.cruise) * cap);
     }
     if (input.strafe) target.addScaledVector(side, input.strafe * 0.6 * sp.cruise * cap);
@@ -509,11 +516,14 @@ export function createSalmon(scene, { pace = 1 } = {}) {
     // The upkeep of the body falls with size much as metabolic rate does; the cost of
     // swimming a little less steeply.
     const m = metabolism(L);
-    let spend = 0.0008 * m + (0.0017 * q * q + 0.0006 * intoCurrent * q) * Math.sqrt(m);
-    if (st.yolk) spend = 0.0006 + 0.003 * q * q;
+    // (Relax mode, or its easing alone: the swimming, and the holding against the current, at
+    // half the cost; the body's upkeep is the same.)
+    const effort = easy() ? RELAX.effort : 1;
+    let spend = 0.0008 * m + (0.0017 * q * q + 0.0006 * intoCurrent * q) * Math.sqrt(m) * effort;
+    if (st.yolk) spend = 0.0006 + 0.003 * q * q * effort;
     if (st.fasting) {
       // Living on its fat: a long, slow burn, and a little back while it rests in slack water.
-      spend = (0.0001 + 0.00035 * q * q + 0.00015 * intoCurrent * q) * (f.gripping || f.shelter > 0.5 ? 0.6 : 1);
+      spend = (0.0001 + (0.00035 * q * q + 0.00015 * intoCurrent * q) * effort) * (f.gripping || f.shelter > 0.5 ? 0.6 : 1);
       // Resting in slack water, or pressed to the bottom, it gets its breath back.
       if (q < 0.35 && (f.flow.speed < 1.2 || f.gripping)) spend -= 0.0004 + 0.0011 * f.gripping;
     }
@@ -533,6 +543,13 @@ export function createSalmon(scene, { pace = 1 } = {}) {
     // Tiredness passes with rest: a fish idling in easy water gets back some strength, though
     // only food fills it.
     if (!st.fasting && !st.yolk && q < 0.4 && f.energy < 0.45) f.energy += 0.0016 * (1 - f.energy / 0.45) * dt * (1 + f.gripping + (f.shelter ?? 0)) * reserve;
+    // Relax mode's safety net: with no food to eat, a fish nearly out of strength gets it back
+    // faster where the water hardly carries it -- behind a stone, pressed to the bottom, in a
+    // still pool -- so that a tired beginner is never left drifting spent for long, and
+    // resting where the tips say pays off. (With the easing alone it is there only for the
+    // spawner, which eats nothing either: a feeding fish's net is the food.)
+    const calm = q < 0.4 && f.flow.speed * carry < 0.5 * sp.cruise;
+    const mend = easy() && calm && f.energy < RELAX.low ? RELAX.mend : 1;
     if (st.yolk) {
       // The yolk feeds it, and it grows while it keeps still in the gravel.
       f.energy = Math.min(1, f.energy + 0.0045 * dt);
@@ -544,16 +561,20 @@ export function createSalmon(scene, { pace = 1 } = {}) {
       const fresh = s < S.coast ? 1 : 0.35;
       const home = clamp(1 - (s - S.redd - 40) / (S.coast - S.redd - 40), 0, 1);
       f.progress = Math.max(f.progress + ((dt * pace) / (st.minutes * 60)) * fresh, home);
+      // (Spent on the long way home, it is caught by the same net as the young.)
+      if (mend > 1) f.energy = Math.min(1, f.energy + 0.006 * (mend - 1) * dt);
     } else if (mode.vegan) {
-      // Vegan: nothing eaten. It grows with time, and more with the way it swims -- down the
-      // river while young, any way at sea -- and keeps its strength up by resting.
+      // Relax: nothing eaten. It grows with time, and more with the way it swims -- down the
+      // river while young, any way at sea -- and keeps its strength up by resting. (The way
+      // downstream is counted with the whole current, as if it carried the fish as hard as
+      // ever, so that the lighter push does not slow the growing down.)
       const inSea = s > S.coast - 400;
       const t = frameAt(s);
-      const way = inSea ? f.relative.length() : Math.max(0, f.velocity.x * t.tx + f.velocity.z * t.tz);
+      const way = inSea ? f.relative.length() : Math.max(0, (f.relative.x + f.flow.vx) * t.tx + (f.relative.z + f.flow.vz) * t.tz);
       f.progress += (((dt * pace) / (st.minutes * 60)) * 0.5 * thermal.pace + (way * dt) / (VEGAN_WAY[st.id] ?? 1500)) * bonus("growth");
       if (st.sea && !inSea) f.progress = Math.min(f.progress, 0.97);
       f.stomach = 0;
-      f.energy = Math.min(1, f.energy + (q < 0.4 ? 0.006 : 0.0025) * dt);
+      f.energy = Math.min(1, f.energy + (q < 0.4 ? 0.006 * mend : 0.0025) * dt);
     } else {
       const rate = st.need / (st.minutes * 60);
       const inSea = s > S.coast - 400 ? 1 : 0;
@@ -581,7 +602,7 @@ export function createSalmon(scene, { pace = 1 } = {}) {
     if (st.fasting) f.progress = Math.min(1, f.progress);
 
     // ---- Move: through the water and with it.
-    f.velocity.set(f.relative.x + f.flow.vx, f.relative.y, f.relative.z + f.flow.vz);
+    f.velocity.set(f.relative.x + f.flow.vx * carry, f.relative.y, f.relative.z + f.flow.vz * carry);
     // The strike's dash rides on top: quick, short, and gone with it.
     if (f.striking > 0 && f.strikeSpeed > 0) f.velocity.addScaledVector(f.heading, f.strikeSpeed * Math.min(1, f.striking / 0.08));
     // Far out at sea the haze closes in and a set of the water turns the fish back.

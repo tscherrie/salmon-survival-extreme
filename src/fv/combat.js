@@ -21,14 +21,16 @@ import { createNeutrals } from "./neutrals.js";
 import { createCapsules } from "./look/capsule.js";
 import { createOrdnance } from "./look/ordnance.js";
 import { createHostile } from "./hostile.js";
-import { createGore } from "./gore.js";
+import { CORPSE_FOOD, createGore } from "./gore.js";
 import { createGravel } from "./gravel.js";
 import { createGround } from "./ground.js";
 import { createWeaponModels } from "./models.js";
 import { createCombatHud } from "./hud.js";
 import { ARSENAL, createPickups } from "./pickups.js";
 import { createProjectiles, createRibbons, createSmoke } from "./projectiles.js";
+import { createRemains } from "./remains.js";
 import { createRules } from "./rules.js";
+import { createSafetyNet } from "./safety.js";
 import { createArmedSchool } from "./school.js";
 import { createSfx } from "./sfx.js";
 import { createSignals } from "./signals.js";
@@ -62,7 +64,8 @@ export function createCombat(game) {
   const ribbons = createRibbons(scene);
   const fx = createFx(scene, camera, { capacity: light ? 400 : 768, bubbleCapacity: light ? 240 : 480 });
   const sfx = createSfx(sound);
-  const gore = createGore(scene, camera, { random: look, light });
+  // (The chunks are food, and glow as the drift does while the salmon can eat them.)
+  const gore = createGore(scene, camera, { random: look, light, glow: life.food?.glow ?? null });
   // (What the splatter marks: the enemies' skins, the salmon's own, the bed with its stones.)
   gore.attach?.({ enemies, salmon, fish, terrain, pebbles: game.pebbles });
   const models = createWeaponModels(scene, { mirror: game.mirror, enemies, camera });
@@ -77,10 +80,15 @@ export function createCombat(game) {
   const lifeLight = life.light;
   life.light = function (value, ...rest) {
     capsules.light(value);
+    gore.light?.(value);
     return lifeLight.call(this, value, ...rest);
   };
   const hud = createCombatHud(habitat, { weapons: WEAPONS });
   const difficulty = createDifficulty();
+  // What a fight leaves is food (remains.js), on every difficulty; and Tourist's safety net,
+  // food drifting near a fish that is nearly spent (safety.js).
+  const remains = createRemains({ life, gore });
+  const safety = createSafetyNet({ life, difficulty });
   const director = createDirector({ random });
   const gravel = createGravel({ random, hud: game.hud });
   const ground = createGround({ terrain, pebbles: game.pebbles });
@@ -430,6 +438,8 @@ export function createCombat(game) {
     if (player?.local) {
       player.kills++;
       reward(player, e);
+      // (The first kills: the tip that what is sunk is food, below.)
+      remainsTip = clock;
     }
     // (A kill of the school's is counted as the school's: it does not feed the salmon, which
     // grows by its own fights.)
@@ -543,35 +553,55 @@ export function createCombat(game) {
     },
   };
 
-  // A small sunk fish can be eaten where it lies, and so can a small one stunned belly-up,
-  // and the chunks a burst one left (gore.eat).
+  // What a fight left is eaten as the drift is (remains.js, which caps what fighting feeds):
+  // a small sunk fish swallowed where it floats, a big one bitten into, the chunks a burst
+  // one left (gore.eat); and a small one stunned belly-up is swallowed alive, a kill.
+  const bitAt = new THREE.Vector3();
   function eatCorpses(player) {
     const f = player.fish;
     if (player.down) return;
+    const L = f.length;
+    const hungry = remains.hungry(player);
     for (const e of enemies.list) {
       // (Nor a jellyfish with its mine: a live one goes off at a touch, and a dead one's own
       // mine is about to tear it apart. Nor one another page runs, alive: its page decides.)
       // (Nor one of its own school, fallen.)
-      if (e.eaten || e.burst || e.size > 1.1 * f.length || e.spec.weapon?.kind === "contact" || e.spec.kin || (e.remote && !e.dead)) continue;
-      if (!e.dead && !firing.stunned(e)) continue;
-      if (f.mouth.distanceTo(e.position) < 0.25 * f.length + 0.35 * e.size) {
-        if (!e.dead) {
-          // (Swallowed alive: a kill, but nothing is left to splatter.)
-          enemies.hit(e, e.hp + 1, null, player.id);
-          player.kills++;
-          if (owners && e.shared) owners.sunk(e, player.id, UP, "bite");
-        }
-        // (A body the others see as well goes on their pages too: one this page ran, and one
-        // another page ran that became this page's own body when it sank. Only this page's
-        // own -- the larvae, the shoal fish -- have no id the others know.)
-        if (owners && e.id > 0) owners.eaten(e);
-        e.eaten = true;
-        player.salmon.eat(35 * e.size, e.kind);
-        fx.fizz(e.position.x, e.position.y, e.position.z, { count: 5, size: 0.015 + 0.01 * e.size, spread: e.size * 0.3, random: look });
+      if (e.eaten || e.burst || e.spec.weapon?.kind === "contact" || e.spec.kin || (e.remote && !e.dead)) continue;
+      if (!e.dead) {
+        if (e.size > 1.1 * L || !firing.stunned(e) || f.mouth.distanceTo(e.position) >= 0.25 * L + 0.35 * e.size) continue;
+        // (Swallowed alive: a kill, but nothing is left to splatter.)
+        enemies.hit(e, e.hp + 1, null, player.id);
+        player.kills++;
+        if (owners && e.shared) owners.sunk(e, player.id, UP, "bite");
+        swallow(player, e);
+        continue;
+      }
+      if (!hungry) continue;
+      const how = remains.body(e, L);
+      if (how === "whole") {
+        if (f.mouth.distanceTo(e.position) < 0.25 * L + 0.35 * e.size) swallow(player, e);
+      } else if (how === "bite") {
+        // (The mouth at the body: its axis, and as far again as the fish is thick.)
+        remains.onBody(e, f.mouth, bitAt);
+        if (f.mouth.distanceTo(bitAt) < 0.25 * L + 0.12 * e.size) remains.bite(player, e, bitAt, clock);
       }
     }
-    const bits = gore.eat?.(f.mouth, 0.3 * f.length + 0.1) ?? 0;
-    if (bits > 0) player.salmon.eat(bits, "flesh");
+    if (hungry) {
+      const bit = gore.eat?.(f.mouth, 0.3 * L + 0.1, f.heading) ?? 0;
+      if (bit > 0) remains.take(player, bit, "flesh");
+    }
+  }
+  // When the fish last sank one of its own while the tip on what that leaves was still to come.
+  let remainsTip = null;
+  // A body swallowed whole: worth what it weighed, up to two pieces' worth (remains.js).
+  function swallow(player, e) {
+    // (A body the others see as well goes on their pages too: one this page ran, and one
+    // another page ran that became this page's own body when it sank. Only this page's own
+    // -- the larvae, the shoal fish -- have no id the others know.)
+    if (owners && e.id > 0) owners.eaten(e);
+    e.eaten = true;
+    remains.take(player, CORPSE_FOOD * e.size, e.kind, 2);
+    fx.fizz(e.position.x, e.position.y, e.position.z, { count: 5, size: 0.015 + 0.01 * e.size, spread: e.size * 0.3, random: look });
   }
 
   function step(dt, outcome) {
@@ -680,7 +710,15 @@ export function createCombat(game) {
     firing.flush();
     // The enemies' charges that are due.
     detonations(dt);
+    remains.step(dt, local, enemies);
     eatCorpses(local);
+    // Once, a moment after a kill of its own, while the fish can eat what it left: that
+    // fighting feeds. (Tried again while the tip line is busy, for a while.)
+    if (remainsTip !== null && clock - remainsTip > 1.2) {
+      if (clock - remainsTip > 15 || game.hud.seen?.("fv-remains")) remainsTip = null;
+      else if (remains.hungry(local) && game.hud.tip("fv-remains", "<b>Kampf nährt.</b> Was du versenkst, lässt Fressbares zurück: Stücke, die mit der Strömung treiben, und tote Gegner zum Anbeißen. Schwimm hin und friss – das gibt dir Kraft.", 11)) remainsTip = null;
+    }
+    safety.step(dt, local);
     rules.after(local);
     fx.update(dt);
     ordnance.update(dt, projectiles.live);
@@ -832,6 +870,8 @@ export function createCombat(game) {
     sfx,
     fx,
     difficulty,
+    remains,
+    safety,
     canFire,
     trigger,
   };

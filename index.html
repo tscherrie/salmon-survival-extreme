@@ -278,7 +278,7 @@
       <div id="loading" role="status"><p>Der Fluss entsteht… <span class="percent"><span class="now"></span><span class="room" aria-hidden="true">100&nbsp;%</span></span></p></div>
       <!-- The title card, which is also the pause (intro.js): the title, the start with the
            saved stage under it, the settings, the keys, and GitHub with the version at the
-           foot. What a graphics step does and what vegan mode means are in the tooltips, so
+           foot. What a graphics step does and what relax mode means are in the tooltips, so
            that the card itself stays short. -->
       <div id="intro" role="dialog" aria-modal="false" aria-labelledby="intro-title" hidden>
         <div class="card">
@@ -311,8 +311,9 @@
               <p class="label">Sprache</p>
               <div class="langs seg" role="group" aria-label="Language / Sprache"></div>
             </div>
-            <div class="row for-desktop" title="Keiner jagt dich, und du jagst keinen – ohne Hunger wächst du mit der Zeit und auf deinem Weg.">
-              <label class="label" for="intro-vegan">Vegan-Modus</label>
+            <!-- Relax mode (src/vegan.js: the switch keeps its old id and class). -->
+            <div class="row for-desktop" title="Keiner jagt dich, und du jagst keinen – ohne Hunger wächst du mit der Zeit und auf deinem Weg. Schwimmen kostet weniger Kraft, und die Strömung reißt dich nicht so leicht mit.">
+              <label class="label" for="intro-vegan">Relax-Modus</label>
               <label class="vegan">
                 <input id="intro-vegan" type="checkbox" />
                 <span class="switch" aria-hidden="true"></span>

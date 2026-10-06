@@ -6,10 +6,11 @@
 // moves them is gore.js.
 
 import * as THREE from "three";
-import { Fn, abs, attribute, cos, exp, float, instancedBufferAttribute, length, max, mix, positionGeometry, positionLocal, positionWorld, select, sin, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
-import { perPoint, skyUniforms } from "../materials.js";
+import { Fn, abs, attribute, cameraPosition, cos, dot, exp, float, instancedBufferAttribute, length, max, mix, normalView, normalize, positionGeometry, positionLocal, positionViewDirection, positionWorld, pow, select, sin, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { PointCloud, perPoint, skyUniforms } from "../materials.js";
 import { river, surfaceLevelAt, waterLit, waterTime } from "../render/water.js";
 import { ditherThreshold } from "../render/dither.js";
+import { waterBetween } from "../render/fog.js";
 
 // Sprite kinds (gore.js keeps them per sprite; the clouds go to one draw, the rest to the
 // other).
@@ -382,7 +383,11 @@ function lump(random, variant) {
 // Per chunk (instance attributes, both vec4): `coat` = the skin's colour (the flank and back
 // of the fish it came from) and how pale or dark its flesh is; `gib` = how burnt its torn
 // faces are (a laser cauterises them), which of the three shapes it is.
-export function createGibMaterial(coat, gib) {
+// `gib` per chunk: x burnt, y which of the three shapes, z how much it shows as food to the
+// salmon now (gore.js: 0, or more the nearer it is). `glow`: the drift's own glow (life.js
+// food.glow, following the daylight), so that a chunk the fish can eat lights up as a
+// morsel does.
+export function createGibMaterial(coat, gib, glow = null) {
   const C = instancedBufferAttribute(coat);
   const G = instancedBufferAttribute(gib);
   const meat = attribute("aMeat", "vec3");
@@ -413,6 +418,46 @@ export function createGibMaterial(coat, gib) {
   const through = exp(river.absorb.mul(depth).negate()).mul(0.55).add(0.45);
   // (Dim at night, as the blood clouds are: gore.js.)
   const day = smoothstep(0.15, 0.85, skyUniforms.sun).mul(0.95).add(0.05);
-  material.emissiveNode = flesh.mul(0.3).mul(through).mul(day).mul(skin.oneMinus());
+  const own = flesh.mul(0.3).mul(through).mul(day).mul(skin.oneMinus());
+  if (!glow) {
+    material.emissiveNode = own;
+    return material;
+  }
+  // Food, as life.js lights its drift: a warm rim that gently pulses round what this fish
+  // can swallow (mostly at the rim, so that the meat still reads as meat; its halo,
+  // createFoodHalos below, makes it out from afar).
+  const edge = pow(dot(normalView, positionViewDirection).clamp(0, 1).oneMinus(), 2);
+  const pulse = sin(waterTime.mul(5).add(G.y.mul(2.1))).mul(0.25).add(0.75);
+  material.emissiveNode = own.add(vec3(1, 0.78, 0.38).mul(G.z).mul(edge.mul(1.2).add(0.2)).mul(pulse).mul(glow));
   return material;
+}
+
+// The soft halo round a chunk while it is food (gore.js), as life.js draws one round each
+// morsel of its drift so that a speck reads at a distance: additive, fogged as a colour first
+// and then weighted, so that only what gets through the water of the halo's own colour shows.
+// `light` follows the daylight (combat hands on what the game gives life.js).
+export function createFoodHalos(capacity) {
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(capacity * 3);
+  const sizes = new Float32Array(capacity);
+  const colors = new Float32Array(capacity * 3);
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute("size", new THREE.BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setDrawRange(0, 0);
+  const light = uniform(1);
+  const material = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, sizeAttenuation: true });
+  material.positionNode = perPoint(geometry, "position");
+  material.scaleNode = perPoint(geometry, "size");
+  const r = length(uv().sub(0.5)).mul(2);
+  const a = exp(r.mul(r).mul(-3.5)).mul(0.275);
+  const ray = positionWorld.sub(cameraPosition);
+  const through = waterBetween(perPoint(geometry, "color").mul(light), length(ray), normalize(ray)).sub(waterBetween(vec3(0), length(ray), normalize(ray)));
+  material.colorNode = max(through, vec3(0)).mul(a);
+  material.opacityNode = a.greaterThan(0.004).select(1, 0);
+  material.alphaTest = 0.5;
+  const halos = new PointCloud(geometry, material);
+  halos.frustumCulled = false;
+  halos.name = "Combat food halos";
+  return { halos, geometry, positions, sizes, colors, light };
 }
