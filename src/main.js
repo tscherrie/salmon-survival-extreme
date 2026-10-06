@@ -1508,7 +1508,7 @@ async function start() {
     descent: null,
     // When it last climbed, and how long each rung must wait before it is tried again.
     climbed: -Infinity,
-    blocked: RUNGS.map(() => ({ until: 0, wait: 15 })),
+    blocked: RUNGS.map(() => ({ until: 0, wait: 8 })),
     // The changes made, for looking into (?diagnostics: salmon.frameRate).
     history: [],
   };
