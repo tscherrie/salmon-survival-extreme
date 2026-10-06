@@ -48,7 +48,7 @@ import { createDrive } from "./drive.js";
 import { createBaitBall } from "./baitball.js";
 import { createScent } from "./scent.js";
 import { createRedd } from "./redd.js";
-import { mode } from "./vegan.js";
+import { carried, mode } from "./vegan.js";
 import { TRAITS, STEP, earned, heritage, inherit, loadHeritage, resetHeritage, traits as heritageTraits } from "./heritage.js";
 import { dither } from "./render/dither.js";
 import { mods } from "./mods.js";
@@ -1480,14 +1480,15 @@ async function start() {
   // smallest size cannot hold 60 or drawing smaller brings no faster frames -- a slow
   // processor, or a screen or browser that shows only 30 (a phone in low power mode, a
   // laptop saving its battery), where shrinking the picture would only spoil it. What a
-  // frame takes is read as the median of the last second, so that a single long one (a
-  // shader being built) moves nothing. When frames run long for two seconds the image is
-  // drawn a rung smaller (and scaled up), never below three quarters of the chosen quality's
-  // on a computer, so that the quality chosen still looks like itself (a phone, whose screen
-  // asks for far more pixels, may go to half); if the whole way down brings no faster
-  // frames, it goes back to where it started. Once frames keep to the rate for a few
-  // seconds it climbs back a rung; a rung that proved too much right after a climb waits
-  // longer each time before it is tried again.
+  // frame takes is read as the mean of the last second without its longest sixth, so that
+  // a single long one (a shader being built) moves nothing while a mix of quick and slow
+  // frames still counts for what it is. When frames run long for two seconds the image is
+  // drawn a rung smaller (and scaled up), never below three quarters of the chosen
+  // quality's on a computer, so that the quality chosen still looks like itself (a phone,
+  // whose screen asks for far more pixels, may go to half); if the whole way down brings no
+  // faster frames, it goes back to where it started. Once frames keep to the rate for a few
+  // seconds it climbs back a rung -- the rung it had to leave only after a while, and a
+  // rung that proves too much again waits longer each time before it is tried again.
   const RUNGS = handheld ? [1, 0.88, 0.77, 0.68, 0.59, 0.5] : [1, 0.9, 0.82, 0.75];
   const frameRate = {
     // (The running average, for the ?fps box.)
@@ -1512,11 +1513,14 @@ async function start() {
     history: [],
   };
   const sorted = [];
-  const median = (list) => {
+  const typical = (list) => {
     sorted.length = 0;
     for (const x of list) sorted.push(x);
     sorted.sort((a, b) => a - b);
-    return sorted[sorted.length >> 1];
+    const n = Math.max(1, Math.floor(sorted.length * 0.85));
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += sorted[i];
+    return sum / n;
   };
   function note(why) {
     const f = frameRate;
@@ -1547,15 +1551,20 @@ async function start() {
     // A second's worth of frames at this size before anything is judged.
     if (f.since < 1 || f.intervals.length < 30) return;
     const now = performance.now() / 1000;
-    const took = median(f.intervals);
-    const slow = took > f.goal * 1.12;
+    const took = typical(f.intervals);
+    // (A fifth over the rate: a frame missed now and then is no reason to draw less.)
+    const slow = took > f.goal * 1.2;
     const bottom = RUNGS.length - 1;
     // On the way down: keeping to the rate again ends it. Still too slow at the bottom rung,
     // 60 cannot be held here, and 30 becomes the rate; and if the whole way down brought no
     // faster frames, the pixels were not what held them up -- back to where it started.
     if (f.descent && f.since >= 1.5) {
-      if (!slow) f.descent = null;
-      else if (f.rung === bottom) {
+      if (!slow) {
+        f.descent = null;
+        // (The rung just left was too much a moment ago: not straight back up to it.)
+        const b = f.blocked[f.rung - 1];
+        if (b) b.until = now + b.wait;
+      } else if (f.rung === bottom) {
         const { from, before } = f.descent;
         f.descent = null;
         f.goal = 1 / 30;
@@ -2438,7 +2447,8 @@ async function start() {
     // behind the stones and near the bed is the whole trick of living in a brook.
     else if (!hud.seen("current") && (st.phase === "fry" || st.phase === "parr") && time > 12 && !fish.gripping && (fish.shelter ?? 0) < 0.3 && fish.flow.speed > 0.6 * salmon.speeds().cruise && regionWeights(fish.river.s).sea < 0.5)
       hud.tip("current", "<b>Die Strömung</b> ist hinter Steinen und dicht am Grund schwächer. Dort kostet dich das Schwimmen weniger Kraft, und du kannst dich ausruhen.", 10);
-    else if (st.phase === "fry" && fish.flow.speed > salmon.speeds().cruise && !fish.gripping)
+    // (Stronger as it carries the fish: in relax mode only part of it does.)
+    else if (st.phase === "fry" && fish.flow.speed * carried() > salmon.speeds().cruise && !fish.gripping)
       hud.tip("grip", "Die Strömung ist stärker als du: tauch zum Grund und halte <kbd>S</kbd>, dann krallst du dich an den Steinen fest.");
     else if (fish.energy < 0.3 && !st.fasting && !st.yolk && mode.vegan)
       hud.tip("tiredVegan", "Deine <b>Kraft</b> geht zur Neige. Ruh dich hinter einem Stein oder am Grund (<kbd>S</kbd>) aus – dort kommt sie schnell wieder.");
