@@ -4,10 +4,17 @@
 // dead fish trailing a thin red thread and smoke from a burnt pinhole; heavier weapons
 // tear the exit side open; the big guns (weapons.js: bursts) burst the fish whatever its
 // size: a billowing cloud, flecks, silver scales, and chunks of
-// flesh flung out on arcs, falling as they would in air (the game's rule: weapons work under
-// water as in air), bouncing once off the gravel and lying there. Blood drifts with the
-// current (the same water that carries the motes), darkens from crimson to rust as it
-// thins, and fades over some seconds.
+// flesh flung out hard, which the water stops at once (as it stops the bullets: the user's
+// rule since 26.09), then sinking slowly and drifting with the current until they lie on the
+// gravel. Blood drifts with the current (the same water that carries the motes), darkens
+// from crimson to rust as it thins, and fades over some seconds.
+//
+// The chunks are food ("Kampf nährt das Leben", plan part 2): each is worth its share of
+// what the fish weighed, and the salmon eats them as it eats the drift (combat.js with
+// remains.js, which cap what fighting feeds). While this fish can eat them they glow warm
+// as a morsel does (feed() says who eats, frame() lights them), and the nearest in front is
+// marked for it (nearest()). They are this page's own pool, not life.js's drift, so nothing
+// else eats them -- not the armed school, not the rival young salmon.
 //
 // Three draws: the clouds (one sprite cloud, sorted back to front each frame so they blend
 // right), the small hard bits (flecks, scales, steam beads, embers: a cut-out sprite cloud
@@ -35,14 +42,16 @@ import { PointCloud, skyUniforms } from "../materials.js";
 import { river, waterTime } from "../render/water.js";
 import { bed, clamp, current, level, locate } from "../course.js";
 import { FX_LAYER } from "./fx.js";
-import { BLOOD, CLOUD, EMBER, FLECK, GOO, ICHOR, SCALE, SILT, SMOKE, STEAM, createCloudMaterial, createGibGeometry, createGibMaterial, createSpeckMaterial, spriteBasis } from "./gore-shapes.js";
+import { BLOOD, CLOUD, EMBER, FLECK, GOO, ICHOR, SCALE, SILT, SMOKE, STEAM, createCloudMaterial, createFoodHalos, createGibGeometry, createGibMaterial, createSpeckMaterial, spriteBasis } from "./gore-shapes.js";
 import { createScorch } from "./look/scorch.js";
 import { createWounds } from "./look/wounds.js";
 import { WEAPONS, bursts } from "./weapons.js";
 
 const TAU = Math.PI * 2;
-// Chunks fall as they would in air (the weapons' rule), in scene units per second squared.
-const GRAVITY = 98;
+// A chunk flung out of a burst is stopped by the water at this rate (a second), and then
+// drifts at this part of the current, as the drift does.
+const GIB_DRAG = 3.2;
+const GIB_CARRY = 0.85;
 // How long a corpse keeps bleeding, and how fast its bleeding eases off (seconds).
 const BLEED_SECONDS = 10;
 const BLEED_EASE = 3.5;
@@ -57,9 +66,9 @@ const CATCH_UP = 2.5;
 const BUDGET_EDGES = [0.01, 0.02, 0.035, 0.05, 0.08, 0.12, 0.18, 0.26, 0.36, 0.5, 1.01];
 // (The classes that may be dropped: up to 5 %.)
 const FAINT = 4;
-// What a whole corpse is worth eaten (combat.js: salmon.eat(35 * size)); a burst fish's
-// chunks share most of it.
-const CORPSE_FOOD = 35;
+// What a whole corpse is worth eaten, by its size (remains.js); a burst fish's chunks share
+// most of it.
+export const CORPSE_FOOD = 35;
 
 // How hard each weapon tears (the roster's splatter column). `power` 1 is a solid rifle hit;
 // it sets how much flies, while whether the fish bursts at all is the weapon's class
@@ -123,7 +132,8 @@ const scaly = (e) => {
 const hunterLength = (e) => e.target?.fish?.length ?? e.size;
 
 // (combat.js hands in its `random` as well; it is left unused on purpose, see above.)
-export function createGore(scene, camera, { light = false } = {}) {
+// `glow`: the drift's glow (life.js food.glow), which the chunks take on while they are food.
+export function createGore(scene, camera, { light = false, glow = null } = {}) {
   const random = randomGenerator(0x0b1005);
   const PUFFS = light ? 448 : 896;
   const GIBS = light ? 64 : 128;
@@ -234,7 +244,7 @@ export function createGore(scene, camera, { light = false } = {}) {
   const gibAttribute = new THREE.InstancedBufferAttribute(new Float32Array(GIBS * 4), 4).setUsage(THREE.DynamicDrawUsage);
   const coatArray = coatAttribute.array,
     gibArray = gibAttribute.array;
-  const gibs = new THREE.InstancedMesh(createGibGeometry(random), createGibMaterial(coatAttribute, gibAttribute), GIBS);
+  const gibs = new THREE.InstancedMesh(createGibGeometry(random), createGibMaterial(coatAttribute, gibAttribute, glow), GIBS);
   gibs.name = "Combat gibs";
   gibs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   gibs.count = 0;
@@ -243,6 +253,12 @@ export function createGore(scene, camera, { light = false } = {}) {
   gibs.receiveShadow = true;
   gibs.layers.set(FX_LAYER);
   scene.add(gibs);
+  // (And their halos while they are food: gore-shapes.js.)
+  const morsels = glow ? createFoodHalos(GIBS) : null;
+  if (morsels) {
+    morsels.halos.layers.set(FX_LAYER);
+    scene.add(morsels.halos);
+  }
   const gx = new Float32Array(GIBS),
     gy = new Float32Array(GIBS),
     gz = new Float32Array(GIBS),
@@ -265,7 +281,6 @@ export function createGore(scene, camera, { light = false } = {}) {
     gS = new Float32Array(GIBS),
     gFood = new Float32Array(GIBS);
   const gRest = new Uint8Array(GIBS),
-    gBounced = new Uint8Array(GIBS),
     gStuff = new Uint8Array(GIBS);
   let gibCount = 0;
 
@@ -480,8 +495,9 @@ export function createGore(scene, camera, { light = false } = {}) {
     return hide;
   }
 
-  // A chunk of flesh, `radius` (units), flung off at (ux, uy, uz): it flies on an arc as it
-  // would in air, bounces once off the bed and lies there. `food`: what it is worth eaten.
+  // A chunk of flesh, `radius` (units), flung off at (ux, uy, uz): the water stops it, it
+  // sinks slowly with the current and lies on the bed until it fades. `food`: what it is
+  // worth eaten (nothing for a jellyfish's goo).
   function gib(x, y, z, ux, uy, uz, radius, e, burn, food) {
     let i = gibCount;
     if (gibCount < GIBS) gibCount++;
@@ -515,7 +531,8 @@ export function createGore(scene, camera, { light = false } = {}) {
     gRadius[i] = radius * 0.7;
     gOwner[i] = e.size;
     gAge[i] = 0;
-    gLife[i] = 15 + 5 * random();
+    // (Long enough for the salmon to come for it after the fight.)
+    gLife[i] = 22 + 6 * random();
     // Most chunks trail blood as they fly (the others just tumble).
     gTrail[i] = random() < 0.7 ? random() * 0.03 : Infinity;
     gFlowX[i] = site.fx;
@@ -524,9 +541,8 @@ export function createGore(scene, camera, { light = false } = {}) {
     gTop[i] = site.top;
     gS[i] = site.s;
     gRest[i] = 0;
-    gBounced[i] = 0;
-    gFood[i] = food;
     gStuff[i] = stuffOf(e);
+    gFood[i] = gStuff[i] === GOO ? 0 : food;
     const skin = coatOf(e);
     coatArray[i * 4] = skin[0];
     coatArray[i * 4 + 1] = skin[1];
@@ -541,9 +557,9 @@ export function createGore(scene, camera, { light = false } = {}) {
 
   // Chunk sizes follow a steep law: most are small bits, one or two are big.
   const chunkRadius = (k, big) => (0.02 + 0.065 * Math.pow(big ? 0.75 + 0.25 * random() : random(), 3)) * k;
-  // Flung out of the body at (6 + 8 r) * sqrt(k) units a second, so the arcs span a body
-  // length or two (more for a heavy weapon) at every size, mostly the way the shot went
-  // and upward.
+  // Flung out of the body at (6 + 8 r) * sqrt(k) units a second, so that before the water
+  // stops them they fly two to four units for a fish of a unit (more for a heavy weapon and
+  // a bigger fish), mostly the way the shot went and upward.
   function fling(k, dx, dy, dz, power, out) {
     sphere();
     const speed = (6 + 8 * random()) * Math.sqrt(k) * Math.sqrt(0.6 + 0.4 * power);
@@ -772,9 +788,9 @@ export function createGore(scene, camera, { light = false } = {}) {
           looseScale(x + hx * (random() - 0.5) * 0.7 * k, y, z + hz * (random() - 0.5) * 0.7 * k, dir.x * speed + dx * 0.5 * k, dir.y * speed + 0.3 * k, dir.z * speed + dz * 0.5 * k, (0.02 + 0.015 * random()) * k, 3.5 + 3.5 * random(), (0.08 + 0.12 * random()) * Math.sqrt(k));
         }
       }
-      // Chunks: what is left of it, flung out on arcs. Together they are worth most of the
-      // corpse eaten.
-      const g = Math.round(clamp((1 + 2 * power) * Math.pow(k, 0.35) * plenty, 1, 2 + 2.5 * power));
+      // Chunks: what is left of it, flung out -- three at least, so that a burst always
+      // leaves something to eat. Together they are worth most of the corpse eaten.
+      const g = Math.round(clamp((1 + 2 * power) * Math.pow(k, 0.35) * plenty, 3, Math.max(3, 2 + 2.5 * power)));
       const food = (CORPSE_FOOD * k * 0.8) / g;
       for (let i = 0; i < g; i++) {
         const along = (random() - 0.5) * 0.7 * k;
@@ -1115,11 +1131,21 @@ export function createGore(scene, camera, { light = false } = {}) {
       const r = gRadius[i];
       const k = gOwner[i];
       if (!gRest[i]) {
-        // In flight, as in air: it falls, and the water does not slow it.
-        gvy[i] -= GRAVITY * dt;
-        gx[i] += gvx[i] * dt;
+        // Through the water: the burst's push dies away within a fraction of a second (the
+        // water stops a chunk as it stops a bullet), and what is left is a slow sinking with
+        // a little tumbling, the current carrying it along as it carries the drift -- at
+        // first at the corpse's pace, the water taking it over CATCH_UP seconds. A big chunk
+        // sinks faster than a small one.
+        const slow = Math.exp(-GIB_DRAG * dt);
+        const sink = clamp(0.6 + 3 * r, 0.6, 1.4);
+        gvx[i] *= slow;
+        gvz[i] *= slow;
+        gvy[i] = -sink + (gvy[i] + sink) * slow;
+        const carried = CORPSE_CARRY + (GIB_CARRY - CORPSE_CARRY) * Math.min(1, gAge[i] / CATCH_UP);
+        gx[i] += (gvx[i] + gFlowX[i] * carried) * dt;
         gy[i] += gvy[i] * dt;
-        gz[i] += gvz[i] * dt;
+        gz[i] += (gvz[i] + gFlowZ[i] * carried) * dt;
+        gSpin[i] *= Math.exp(-1.5 * dt);
         if ((i + tick) % 4 === 0) {
           locate(gx[i], gz[i], gS[i], where);
           gS[i] = where.s;
@@ -1129,12 +1155,12 @@ export function createGore(scene, camera, { light = false } = {}) {
           gFloor[i] = bed(where.s, where.u);
           gTop[i] = level(where.s);
         }
-        // (The surface throws it back down.)
+        // (Not out of the water.)
         if (gy[i] > gTop[i] - r) {
           gy[i] = gTop[i] - r;
-          if (gvy[i] > 0) gvy[i] *= -0.3;
+          if (gvy[i] > 0) gvy[i] = 0;
         }
-        // Blood streams off it along its arc: streaks that are left behind in the water and
+        // Blood streams off it as it is flung: streaks that are left behind in the water and
         // roll up into puffs.
         gTrail[i] -= dt;
         if (gTrail[i] <= 0 && gAge[i] < 1.5) {
@@ -1150,16 +1176,13 @@ export function createGore(scene, camera, { light = false } = {}) {
           next.stuff = gStuff[i];
           puff(gx[i], gy[i], gz[i], gvx[i] * 0.3, gvy[i] * 0.3, gvz[i] * 0.3, r * 1.2, r * 2.5 + (0.04 + 0.04 * random()) * k, 0.9 + 1 * random(), 0.25 + 0.25 * fresh);
         }
-        // The bed: it bounces once and then lies there.
+        // The bed: it settles there (a bigger one with a little silt) and lies.
         if (gy[i] < gFloor[i] + r) {
           gy[i] = gFloor[i] + r;
-          if (!gBounced[i] && gvy[i] < -1) {
-            gBounced[i] = 1;
-            gvy[i] *= -0.3;
-            gvx[i] *= 0.55;
-            gvz[i] *= 0.55;
-            gSpin[i] *= 0.5;
-            // A little silt kicked up where it lands.
+          gRest[i] = 1;
+          gvx[i] = gvy[i] = gvz[i] = 0;
+          gSpin[i] = 0;
+          if (r > 0.025) {
             site.fx = gFlowX[i];
             site.fz = gFlowZ[i];
             site.floor = gFloor[i];
@@ -1168,11 +1191,7 @@ export function createGore(scene, camera, { light = false } = {}) {
             next.stuff = SILT;
             next.rate = 2.5;
             next.sink = 0.02;
-            puff(gx[i], gy[i], gz[i], 0, 0.1 * k, 0, r * 2, r * 5 + 0.04 * k, 1.2 + random(), 0.3);
-          } else {
-            gRest[i] = 1;
-            gvx[i] = gvy[i] = gvz[i] = 0;
-            gSpin[i] = 0;
+            puff(gx[i], gy[i], gz[i], 0, 0.05 * k, 0, r * 2, r * 4 + 0.03 * k, 1.2 + random(), 0.22);
           }
         }
         if (gSpin[i] !== 0) {
@@ -1180,10 +1199,16 @@ export function createGore(scene, camera, { light = false } = {}) {
           quaternion.fromArray(gq, i * 4).premultiply(turn).normalize().toArray(gq, i * 4);
         }
       } else {
-        // Lying on the bed: nudged along a little by the current, still seeping blood a
-        // while.
+        // Lying on the bed: nudged along a little by the current (and kept on the bed as
+        // it goes), still seeping blood a while.
         gx[i] += gFlowX[i] * 0.05 * dt;
         gz[i] += gFlowZ[i] * 0.05 * dt;
+        if ((i + tick) % 16 === 0) {
+          locate(gx[i], gz[i], gS[i], where);
+          gS[i] = where.s;
+          gFloor[i] = bed(where.s, where.u);
+          gy[i] = gFloor[i] + r;
+        }
         gTrail[i] -= dt;
         if (gAge[i] < 4 && gTrail[i] <= 0) {
           gTrail[i] = 0.4 + 0.4 * random();
@@ -1229,27 +1254,90 @@ export function createGore(scene, camera, { light = false } = {}) {
     gS[to] = gS[from];
     gFood[to] = gFood[from];
     gRest[to] = gRest[from];
-    gBounced[to] = gBounced[from];
     gStuff[to] = gStuff[from];
   }
 
-  // ---- The splatter is the food: a mouth at `point` takes the chunks within `radius` of it
-  // and gets what they are worth (for salmon.eat).
-  function eat(point, radius) {
-    let food = 0;
+  // ---- The splatter is the food. A mouth at `point`, going along `heading`, takes the
+  // nearest chunk within `radius` of it that is in front of it (or right at it), and gets what
+  // it is worth (for remains.js); one a step, as the drift is taken. 0: none.
+  function eat(point, radius, heading = null) {
+    let best = -1,
+      bestD = Infinity;
     for (let i = 0; i < gibCount; i++) {
-      if (gAge[i] < 0.3) continue;
+      if (gAge[i] < 0.3 || !(gFood[i] > 0)) continue;
       const reach = radius + gRadius[i];
       const dx = gx[i] - point.x,
         dy = gy[i] - point.y,
         dz = gz[i] - point.z;
-      if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
-      food += gFood[i];
-      const last = --gibCount;
-      if (i !== last) moveGib(last, i);
-      i--;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > reach * reach || d2 >= bestD) continue;
+      if (heading) {
+        const d = Math.sqrt(d2);
+        if (d > 0.4 * reach && dx * heading.x + dy * heading.y + dz * heading.z < 0.3 * d) continue;
+      }
+      best = i;
+      bestD = d2;
     }
+    if (best < 0) return 0;
+    const food = gFood[best];
+    const last = --gibCount;
+    if (best !== last) moveGib(last, best);
     return food;
+  }
+  // The nearest chunk worth eating in front of a mouth at `point` going along `heading`,
+  // nearer than `within`, as life.js picks the morsel it marks (well in front: more ahead
+  // than to the side); its place goes into `out`. Returns { distance, ahead } (ahead: how
+  // much of the way to it lies along the heading), or null.
+  const spotted = { distance: 0, ahead: 0 };
+  function nearest(point, heading, within, out) {
+    let best = -1,
+      bestD = within;
+    for (let i = 0; i < gibCount; i++) {
+      if (gAge[i] < 0.3 || !(gFood[i] > 0)) continue;
+      const dx = gx[i] - point.x,
+        dy = gy[i] - point.y,
+        dz = gz[i] - point.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d >= bestD) continue;
+      const ahead = dx * heading.x + dy * heading.y + dz * heading.z;
+      if (ahead <= 0.5 * d) continue;
+      best = i;
+      bestD = d;
+      spotted.ahead = ahead / Math.max(1e-6, d);
+    }
+    if (best < 0) return null;
+    out.set(gx[best], gy[best], gz[best]);
+    spotted.distance = bestD;
+    return spotted;
+  }
+  // Who eats the chunks on this page, for their glow: the fish at `position` of length `L`,
+  // while it may eat them (`on`).
+  const feeder = { position: null, L: 1, on: false };
+  function feed(position, L, on) {
+    feeder.position = position;
+    feeder.L = L;
+    feeder.on = !!on && !!position;
+  }
+  // The daylight, as the game gives it to life.js (for the halos, as for the drift's).
+  function light(value) {
+    if (morsels) morsels.light.value = value;
+  }
+  // A bite out of a floating corpse at `point` (the salmon tearing at it, remains.js): a
+  // little blood comes out where the mouth was, and a fleck or two.
+  function bite(e, point) {
+    const k = Math.min(e.size, 2);
+    survey(point.x, point.y, point.z, e.river?.s ?? null);
+    const what = stuffOf(e);
+    next.carry = CORPSE_CARRY;
+    next.stuff = what;
+    next.rate = 1.2;
+    puff(point.x, point.y, point.z, 0, 0.02 * k, 0, 0.05 * k, (0.16 + 0.1 * random()) * k, 2.5 + 2 * random(), 0.5);
+    for (let i = 0; i < 2; i++) {
+      sphere();
+      next.carry = CORPSE_CARRY;
+      next.stuff = what;
+      fleck(point.x, point.y, point.z, dir.x * 0.8 * k, dir.y * 0.8 * k + 0.2 * k, dir.z * 0.8 * k, (0.01 + 0.01 * random()) * k, 0.3 + 0.3 * random(), k);
+    }
   }
 
   // Only what is written goes up to the graphics card (and nothing while the water is
@@ -1508,6 +1596,7 @@ export function createGore(scene, camera, { light = false } = {}) {
 
     // The chunks, shrinking away at the end of their time, and out of the way when one
     // comes right at the lens (it would be a dark blot over half the picture).
+    let halos = 0;
     for (let i = 0; i < gibCount; i++) {
       const r = gRadius[i];
       const close = Math.hypot(gx[i] - eye.x, gy[i] - eye.y, gz[i] - eye.z);
@@ -1517,6 +1606,35 @@ export function createGore(scene, camera, { light = false } = {}) {
       scale.set(gScale[i * 3] * shrink, gScale[i * 3 + 1] * shrink, gScale[i * 3 + 2] * shrink);
       matrix.compose(position, quaternion, scale);
       gibs.setMatrixAt(i, matrix);
+      // Food to the fish that eats here glows and has its halo, the more the nearer it is
+      // (as life.js lights its drift: within three units and eight lengths), breathing.
+      let near = 0;
+      if (feeder.on && gFood[i] > 0 && gAge[i] >= 0.3) {
+        const p = feeder.position;
+        near = 1 - Math.min(1, Math.hypot(gx[i] - p.x, gy[i] - p.y, gz[i] - p.z) / (3 + 8 * feeder.L));
+      }
+      gibArray[i * 4 + 2] = near;
+      if (morsels && near > 0) {
+        const o = halos * 3;
+        morsels.positions[o] = gx[i];
+        morsels.positions[o + 1] = gy[i];
+        morsels.positions[o + 2] = gz[i];
+        morsels.sizes[halos] = Math.max(6.4 * gScale[i * 3], 0.12) * shrink * near * (1 + 0.22 * Math.sin(clock * 5 + i * 1.7));
+        morsels.colors[o] = 1.05;
+        morsels.colors[o + 1] = 0.75;
+        morsels.colors[o + 2] = 0.36;
+        halos++;
+      }
+    }
+    if (morsels) {
+      morsels.geometry.setDrawRange(0, halos);
+      if (halos > 0)
+        for (const name of ["position", "size", "color"]) {
+          const attribute = morsels.geometry.attributes[name];
+          attribute.clearUpdateRanges();
+          attribute.addUpdateRange(0, halos * attribute.itemSize);
+          attribute.needsUpdate = true;
+        }
     }
     gibs.count = gibCount;
     if (gibCount > 0) {
@@ -1586,6 +1704,10 @@ export function createGore(scene, camera, { light = false } = {}) {
     update,
     frame,
     eat,
+    nearest,
+    feed,
+    light,
+    bite,
     blast,
     impact,
     attach,
@@ -1595,6 +1717,12 @@ export function createGore(scene, camera, { light = false } = {}) {
     // For tests: how much is in the water.
     get busy() {
       return live + gibCount;
+    },
+    // For tests: the chunks that are food, each [x, y, z, worth, lying on the bed (1)].
+    pieces() {
+      const out = [];
+      for (let i = 0; i < gibCount; i++) if (gFood[i] > 0) out.push([gx[i], gy[i], gz[i], gFood[i], gRest[i]]);
+      return out;
     },
   };
 }

@@ -252,6 +252,13 @@ export const SCENES = [
   // a big gun bursts it.)
   { name: "splatter", stage: "parr", at: 2500, season: "summer", hour: 15, splatter: true, spawn: [["troutParr", 3.5, -0.4], ["troutParr", 4, 0.3], ["bullhead", 3, 0.1], ["trout", 7, 0]] },
   { name: "splatter-gross", stage: "parr", at: 2500, season: "summer", hour: 15, splatter: true, kill: "flinte", spawn: [["troutParr", 3.5, -0.4], ["troutParr", 4, 0.3], ["bullhead", 3, 0.1], ["trout", 7, 0]] },
+  // "Kampf nährt das Leben" (remains.js): a tired parr with an empty stomach bursts a young
+  // trout and a bullhead with the shotgun's shells and then swims after the pieces as they
+  // sink and drift, and eats them (its strength goes up, its room for flesh down, until the
+  // room is spent and the rest lie dark); and once it sinks a brown trout with the laser,
+  // which floats up whole, and bites into the body.
+  { name: "fressen", stage: "parr", at: 2500, season: "summer", hour: 15, feast: "flinte", spawn: [["troutParr", 3, -0.3], ["bullhead", 3.4, 0.4]] },
+  { name: "fressen-biss", stage: "parr", at: 2500, season: "summer", hour: 15, feast: "piu", spawn: [["trout", 3.5, 0]] },
 ];
 
 SCENES.push(...LOOK_SCENES);
@@ -370,6 +377,7 @@ async function runScene(salmon, extreme, query) {
   if (scene.pilot) return pilot(salmon, extreme, set, scene, list, index, extra, errors);
   if (scene.closeup) return closeup(salmon, extreme, set, scene, list, index, extra, errors, query);
   if (scene.splatter) return splatter(salmon, extreme, set, scene, list, index, extra, errors);
+  if (scene.feast) return feast(salmon, extreme, set, scene, list, index, extra, errors);
   if (scene.probe) return probe(salmon, extreme, set, scene, list, index, extra, errors);
   if (scene.rounds) return roundsCheck(salmon, set, scene, list, index, extra, errors);
   if (scene.watch) return watch(salmon, extreme, set, scene, list, index, extra, errors, aimAt);
@@ -938,6 +946,161 @@ async function splatter(salmon, extreme, set, scene, list, index, extra, errors)
   await salmon.run(4);
   await picture(`${scene.name}-spaeter`);
   await fetch(`/__report/${set}/${scene.name}`, { method: "POST", body: JSON.stringify({ scene: scene.name, record: [{ label: "end", sunk: combat.enemies.list.filter((e) => e.dead).length }], errors }, null, 1) });
+  await nextTask();
+  if (index + 1 < list.length) location.href = sceneURL(set, list[index + 1], extra);
+}
+
+// What a fight leaves to eat (`feast`: the weapon the shots count as -- a big gun bursts the
+// enemies into pieces, the laser leaves them whole to float up). The enemies are put lurking
+// in front of a parr whose strength is down to 0.35 and whose stomach is empty, and shot
+// until they sink; then the fish swims after what they left -- the nearest piece, or the
+// point of a floating body nearest its mouth -- for up to twelve seconds, with a note every
+// half second and pictures: the pieces from the side, the fish at them, and the end.
+async function feast(salmon, extreme, set, scene, list, index, extra, errors) {
+  const { fish, THREE, course, look, held } = salmon;
+  const combat = extreme.combat;
+  combat.director.hold(1e6);
+  const L = fish.length;
+  const heading = fish.heading.clone().setY(0).normalize();
+  const left = new THREE.Vector3(0, 1, 0).cross(heading).normalize();
+  const spot = {};
+  const foes = [];
+  for (const [kind, ahead, across] of scene.spawn) {
+    const p = fish.position.clone().addScaledVector(heading, ahead * Math.max(1, L)).addScaledVector(left, across * Math.max(1, L));
+    course.locate(p.x, p.z, fish.river.s, spot);
+    const e = combat.enemies.spawn(kind, spot.s, spot.u, fish.position.y + 0.1, { heading: left.clone() });
+    if (e) {
+      e.mode = "lurk";
+      foes.push(e);
+    }
+  }
+  fish.energy = 0.35;
+  fish.stomach = 0;
+  fish.hunger = 0;
+  const record = [];
+  let eats = 0,
+    worth = 0,
+    t = 0;
+  const target = new THREE.Vector3();
+  const note = (label) =>
+    record.push({
+      label,
+      t: +t.toFixed(2),
+      energy: +fish.energy.toFixed(3),
+      stomach: +(salmon.salmon.appetite().full ?? 0).toFixed(3),
+      room: +combat.remains.room(combat.local).toFixed(3),
+      kills: combat.players[0].kills,
+      pieces: combat.gore.pieces().length,
+      nearest: +Math.min(99, ...combat.gore.pieces().map(([x, y, z]) => Math.hypot(x - fish.mouth.x, y - fish.mouth.y, z - fish.mouth.z))).toFixed(2),
+      eats,
+      worth: +worth.toFixed(1),
+      bodies: foes.map((e) => ({ kind: e.kind, dead: e.dead, burst: !!e.burst, eaten: !!e.eaten, left: e.dead && !e.burst ? +combat.remains.fleshOn(e).left.toFixed(1) : null, d: +e.position.distanceTo(fish.mouth).toFixed(2) })),
+      down: extreme.game.now.dead > 0,
+      deaths: combat.deaths.map((d) => `${d.by}@${d.t}`),
+      s: +fish.river.s.toFixed(1),
+      y: +(course.level(fish.river.s) - fish.position.y).toFixed(2),
+    });
+  const picture = async (name) => {
+    extreme.frame(1 / 60);
+    await salmon.capture(`${set}/${scene.name}-${name}`, 1280, 720);
+  };
+  note("start");
+  // (Out of harm's way: a trout lunges even while it lurks, and the rounds its gun fired
+  // before it sank still fly. Only the eating is tried here.)
+  fish.safe = true;
+  for (const e of foes) {
+    const dir = e.position.clone().sub(fish.position).normalize();
+    for (let i = 0; i < 60 && !e.dead; i++) {
+      combat.projectiles.fire({ owner: 0, weapon: scene.feast, position: e.position.clone().addScaledVector(dir, -1.2), velocity: dir.clone().multiplyScalar(30), damage: 4, radius: 0.05, life: 0.2, size: 0.1, tint: [10, 1.1, 0.6] });
+      await salmon.run(1 / 30);
+    }
+  }
+  fish.energy = 0.35;
+  fish.stomach = 0;
+  t = 0;
+  note("sunk");
+  // What they left as it sinks and drifts, from the side: the pieces (or the body).
+  await salmon.run(1);
+  t = 1;
+  const middle = new THREE.Vector3();
+  const pieces = combat.gore.pieces();
+  if (pieces.length) {
+    for (const [x, y, z] of pieces) middle.x += x / pieces.length, middle.y += y / pieces.length, middle.z += z / pieces.length;
+  } else middle.copy(foes[0]?.position ?? fish.position);
+  const eye = middle.clone().addScaledVector(left, 2.4 * Math.max(1, L));
+  eye.y += 0.3 * Math.max(1, L);
+  salmon.view(eye.toArray(), middle.toArray(), 0.02);
+  await salmon.run(1 / 30);
+  await picture("stuecke");
+  // And one piece close up, glowing as a morsel does.
+  const one = pieces.map(([x, y, z]) => new THREE.Vector3(x, y, z)).sort((a, b) => a.distanceTo(fish.mouth) - b.distanceTo(fish.mouth))[0];
+  if (one) {
+    const lens = one.clone().addScaledVector(left, 0.45);
+    lens.y += 0.12;
+    salmon.view(lens.toArray(), one.toArray(), 0.01);
+    await salmon.run(1 / 30);
+    extreme.frame(1 / 60);
+    await salmon.capture(`${set}/${scene.name}-stueck`, 1280, 720);
+  }
+  note("pieces");
+  salmon.view(null);
+  // After them: the nearest piece, else the nearest point of a body there is food on.
+  const goal = () => {
+    let best = null,
+      bestD = Infinity;
+    for (const [x, y, z] of combat.gore.pieces()) {
+      const d = Math.hypot(x - fish.mouth.x, y - fish.mouth.y, z - fish.mouth.z);
+      if (d < bestD) (bestD = d), (best = target.set(x, y, z));
+    }
+    if (best) return best;
+    for (const e of foes) if (combat.remains.body(e, fish.length)) return combat.remains.onBody(e, fish.mouth, target);
+    return null;
+  };
+  let shown = false,
+    close = false;
+  for (let k = 0; k < 24; k++) {
+    await salmon.run(0.5, () => {
+      for (const ev of fish.events) if (ev.type === "eat") (eats++, (worth += ev.nutrition ?? 0));
+      const g = goal();
+      held.delete("KeyW");
+      if (!g || combat.remains.room(combat.local) < 0.02) return;
+      const d = g.clone().sub(fish.mouth);
+      look.yaw = Math.atan2(d.z, d.x);
+      look.pitch = Math.max(-0.8, Math.min(0.8, Math.atan2(d.y, Math.hypot(d.x, d.z))));
+      if (d.length() > 0.15 * fish.length) held.add("KeyW");
+    });
+    t += 0.5;
+    note(`${t.toFixed(1)} s`);
+    // Close by, from beside the fish: the food glowing in front of its mouth.
+    const g = goal();
+    if (!close && g && g.distanceTo(fish.mouth) < 2 * fish.length) {
+      close = true;
+      const mid = g.clone().add(fish.mouth).multiplyScalar(0.5);
+      const side = new THREE.Vector3(0, 1, 0).cross(fish.heading).setY(0).normalize();
+      const at = mid.clone().addScaledVector(side, 1.6 * fish.length);
+      at.y += 0.25 * fish.length;
+      salmon.view(at.toArray(), mid.toArray(), 0.02);
+      await salmon.run(1 / 30);
+      await picture("nah");
+      salmon.view(null);
+    }
+    if (!shown && eats > 0) {
+      shown = true;
+      await picture("fressen");
+    }
+    if (!goal() || combat.remains.room(combat.local) < 0.02) break;
+  }
+  held.delete("KeyW");
+  await picture("ende");
+  note("end");
+  fish.safe = false;
+  // (A rule broken is an error in the report: strength must have gone up, and by no more than
+  // the room for flesh allows.)
+  const first = record[0],
+    last = record.at(-1);
+  if (!(last.eats > 0)) errors.push("nothing eaten");
+  if (!(last.energy > first.energy)) errors.push(`strength did not go up: ${first.energy} -> ${last.energy}`);
+  await fetch(`/__report/${set}/${scene.name}`, { method: "POST", body: JSON.stringify({ scene: scene.name, record, errors }, null, 1) });
   await nextTask();
   if (index + 1 < list.length) location.href = sceneURL(set, list[index + 1], extra);
 }
