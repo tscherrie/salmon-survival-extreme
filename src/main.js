@@ -970,7 +970,7 @@ async function start() {
     if (baitball.on && !ballShown) {
       ballShown = true;
       huntLabel.textContent = translate(baitball.ball.title);
-      // (vegan mode: a sight to see, nothing to catch -- no count)
+      // (relax mode: a sight to see, nothing to catch -- no count)
       huntBar.hidden = mode.vegan;
       track("ball", { outcome: "start", kind: baitball.ball.kind });
       hud.toast(`${baitball.ball.title}!`, mode.vegan ? "Basstölpel stoßen hinein." : "Basstölpel stoßen hinein – schnapp dir, so viele du kannst!", 6);
@@ -1748,7 +1748,7 @@ async function start() {
   const threatAt = new THREE.Vector3();
   const warned = new WeakMap();
   function warnings() {
-    // (vegan mode: nobody is after it -- no warnings)
+    // (relax mode: nobody is after it -- no warnings)
     const list = dead > 0 || celebration.active || fish.safe || mode.vegan ? [] : life.hunters.threats(fish, threatList);
     if (list === threatList && redd.on) redd.threats(fish, list);
     list.sort((a, b) => b.level - a.level);
@@ -1997,7 +1997,7 @@ async function start() {
       fish.events.length = 0;
     }
     lastPlace.copy(fish.position);
-    // The gill nets in the estuary (in vegan mode they catch nothing).
+    // The gill nets in the estuary (in relax mode they catch nothing).
     if (dead <= 0 && !fish.safe) {
       const net = nets.update(dt, fish, mode.vegan);
       if (net === "caught") {
@@ -2036,7 +2036,7 @@ async function start() {
           }
           break;
         case "angler":
-          // (vegan mode: his fly is nothing to it)
+          // (relax mode: his fly is nothing to it)
           if (!mode.vegan) hud.tip("angler", "<b>Ein Angler am Ufer!</b> Seine Fliege treibt verlockend über das Wasser – aber an ihr hängt eine feine Schnur. Beißt du zu, hängst du am Haken.", 10);
           break;
         case "hooked":
@@ -2280,7 +2280,7 @@ async function start() {
     for (let i = 0; i < (outcome.missed ?? 0); i++) if (dead <= 0) brood.escaped();
     // A strike that missed: heard snapping shut on nothing.
     for (const w of outcome.whiffs ?? []) if (dead <= 0 && !fish.captive) sound.whiff(w.key, w.kind);
-    // (vegan mode: nobody dies of anything)
+    // (relax mode: nobody dies of anything)
     if (outcome.killed && dead <= 0 && !mode.vegan) die(outcome.killed);
     else if (fish.energy <= 0 && dead <= 0 && time - lastCombat < 6 && !mode.vegan) die("Im Kampf unterlegen");
     // Too long without food: first a warning, then the body wastes, and with no strength
@@ -2310,8 +2310,10 @@ async function start() {
     if (eggs.count && !["alevin", "fry"].includes(phaseOf(fish.stage))) eggs.count = 0;
     // Tips, each once, when they matter.
     const st = STAGES[fish.stage];
-    if (mode.vegan && time > 6 && !hud.seen("vegan"))
-      hud.tip("vegan", "<b>Vegan-Modus.</b> Keiner jagt dich, und du jagst keinen: Was im Wasser treibt, sind andere Lebewesen, die ihr eigenes Leben führen. Hunger hast du nicht – du wächst mit der Zeit und mit jedem Stück Weg: flussab, solange du jung bist, im Meer überall, und zum Schluss heim zur Quelle.", 12);
+    // (Relax mode's tip has a kind of its own, not the old "vegan": whoever saw that one has
+    // not yet been told about the easing.)
+    if (mode.vegan && time > 6 && !hud.seen("relax"))
+      hud.tip("relax", "<b>Relax-Modus.</b> Keiner jagt dich, und du jagst keinen: Was im Wasser treibt, sind andere Lebewesen, die ihr eigenes Leben führen. Hunger hast du nicht – du wächst mit der Zeit und mit jedem Stück Weg: flussab, solange du jung bist, im Meer überall, und zum Schluss heim zur Quelle. Schwimmen kostet dich nur halb so viel Kraft, die Strömung trägt dich weniger fort, und ganz erschöpft erholst du dich in ruhigem Wasser schneller.", 15);
     else if (windedOnce && fish.winded)
       hud.tip("winded", "<b>Außer Atem!</b> Jeder Spurt, jedes Schnappen und jeder Sprung mit <kbd>Leertaste</kbd> kostet <b>Kraft</b>. Lass dich treiben (<kbd>W</kbd> loslassen) oder halte dich am Grund fest – dann füllt sich der helle Teil wieder, bis zur Kraft aus dem Futter (gestreift).", 10);
     else if (!st.fasting && !st.sea && fish.dart && !mode.vegan)
@@ -2328,10 +2330,15 @@ async function start() {
           : "Gefressenes landet im <b>Magen</b> und wird nach und nach zu <b>Wachstum</b>. Ist der Wachstumsbalken voll, wirst du zum nächsten Stadium.",
         9,
       );
+    // Early in the river, in either mode: where the current is weaker. A beginner who fights it
+    // in the open spends what little strength there is and drifts off spent; the slack water
+    // behind the stones and near the bed is the whole trick of living in a brook.
+    else if (!hud.seen("current") && (st.phase === "fry" || st.phase === "parr") && time > 12 && !fish.gripping && (fish.shelter ?? 0) < 0.3 && fish.flow.speed > 0.6 * salmon.speeds().cruise && regionWeights(fish.river.s).sea < 0.5)
+      hud.tip("current", "<b>Die Strömung</b> ist hinter Steinen und dicht am Grund schwächer. Dort kostet dich das Schwimmen weniger Kraft, und du kannst dich ausruhen.", 10);
     else if (st.phase === "fry" && fish.flow.speed > salmon.speeds().cruise && !fish.gripping)
       hud.tip("grip", "Die Strömung ist stärker als du: tauch zum Grund und halte <kbd>S</kbd>, dann krallst du dich an den Steinen fest.");
     else if (fish.energy < 0.3 && !st.fasting && !st.yolk && mode.vegan)
-      hud.tip("tiredVegan", "Deine <b>Kraft</b> geht zur Neige. Ruh dich hinter einem Stein oder am Grund (<kbd>S</kbd>) aus – dann kommt sie wieder.");
+      hud.tip("tiredVegan", "Deine <b>Kraft</b> geht zur Neige. Ruh dich hinter einem Stein oder am Grund (<kbd>S</kbd>) aus – dort kommt sie schnell wieder.");
     else if (fish.energy < 0.3 && !st.fasting && !st.yolk)
       hud.tip("tired", "Deine <b>Kraft</b> geht zur Neige. Friss etwas, oder ruh dich hinter einem Stein oder am Grund (<kbd>S</kbd>) aus.");
     else if (st.id === "smolt" && regionWeights(fish.river.s).sea < 0.5 && fish.progress > 0.1)
@@ -2385,7 +2392,7 @@ async function start() {
   }
 
   function stageLine(st) {
-    // Vegan mode: no eating, no hunting -- the way itself.
+    // Relax mode: no eating, no hunting -- the way itself.
     if (mode.vegan) {
       const line = {
         fry: "Der Dotter ist aufgebraucht. Von jetzt an wächst du mit der Zeit – und mit jedem Stück Weg flussab.",
